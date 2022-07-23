@@ -23,11 +23,13 @@
 (var editor-state
        @{:cx 3
          :cy 0
-         :rowoffset 5
+         :rowoffset 0
+         :coloffset 0
          :erows @[]
          :linenumbers true
          :screenrows ((get-window-size) :rows)
-         :screencols ((get-window-size) :cols)})
+         :screencols ((get-window-size) :cols)
+         :userconfig @{:scrollpadding 5}})
 
 # Terminal
 
@@ -78,12 +80,11 @@
   (let [sizes (get-window-size)
         r (sizes :rows)
         c (sizes :cols)]
-    (as-> (range r) m
-      (map (fn [_] (string "\e[0;34m" "~" "\e[0m")) m)
-      (fuse-over (array/slice (editor-state :erows) 
-                              (min (length (editor-state :erows)) 
-                                   (editor-state :rowoffset))) 
-                 m)
+    (as-> (editor-state :erows) m 
+      (array/slice m (min (length (editor-state :erows))
+                          (editor-state :rowoffset)))
+      (map |(string/slice $ (min (length $) (editor-state :coloffset))) m)
+      (fuse-over m (map (fn [_] (string "\e[0;34m" "~" "\e[0m")) (range r)))
       (zipwith string (make-row-numbers r (inc (editor-state :rowoffset))) m)
       (welcome-message m sizes)
       (trim-to-width m c)
@@ -93,16 +94,34 @@
 (comment 
   (editor-draw-rows))
 
+# TODO: Implement scroll line buffer based on [:userconfig :scrollpadding]
+
 (defn editor-scroll []
-  (let [cy (editor-state :cy) 
-        screen (editor-state :screenrows)]
+  (let [cx (editor-state :cx)
+        cy (editor-state :cy)
+        ln (editor-state :linenumbers)]
+    
+    # Cursor off screen Top
     (when (< cy 0) 
       (do (when (> (editor-state :rowoffset) 0) 
             (update editor-state :rowoffset dec))
           (set (editor-state :cy) 0)))
-    (when (>= cy screen)
+    
+    # Cursor off screen Bottom
+    (when (>= cy (editor-state :screenrows))
       (do (update editor-state :rowoffset inc)
-          (update editor-state :cy dec)))))
+          (update editor-state :cy dec)))
+    
+    # Cursor off screen Left
+    (when (< cx (if ln 3 1))
+      (do (when (> (editor-state :coloffset) 0)
+            (update editor-state :coloffset dec))
+          (set (editor-state :cx) (if ln 3 1))))
+    
+    # Cursor off screen Right
+    (when (>= cx (editor-state :screencols))
+      (do (update editor-state :coloffset inc)
+          (update editor-state :cx dec)))))
 
 (defn editor-refresh-screen []
   (editor-scroll)
@@ -130,11 +149,11 @@
         cy (editor-state :cy)]
     (case key
       # Left Arrow
-      1000 (when (not (= cx (if ln 3 1)))
+      1000 (when (not (= cx (dec (if ln 3 1))))
              (update editor-state :cx dec))
       
       # Right Arrow
-      1001 (when (not (= cx (- (editor-state :screencols) 1)))
+      1001 (when (not (= cx (editor-state :screencols)))
              (update editor-state :cx inc))
       
       # Up Arrow
@@ -155,8 +174,11 @@
     (case key 
       (ctrl-key (chr "q")) (set quit true)
       (ctrl-key (chr "n")) (toggle-line-numbers)
+
+      # TODO: Fix Pageup and Pagedown behavior
       1004 (repeat (editor-state :screenrows) (editor-move-cursor 1002))
       1005 (repeat (editor-state :screenrows) (editor-move-cursor 1003))
+      
       1006 (set (editor-state :cx) 0)
       1007 (set (editor-state :cx) (- (editor-state :screencols) 1))
       (editor-move-cursor key))))
@@ -169,6 +191,11 @@
     (set (editor-state :erows) erows)))
 
 # Init and main
+
+# TODO: Implement user config dotfile
+
+# (defn load-config []
+#   )
 
 (defn main [& args]
   (enable-raw-mode)
