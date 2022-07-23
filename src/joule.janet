@@ -23,6 +23,7 @@
 (var editor-state
        @{:cx 3
          :cy 0
+         :rowoffset 5
          :erows @[]
          :linenumbers true
          :screenrows ((get-window-size) :rows)
@@ -79,16 +80,32 @@
         c (sizes :cols)]
     (as-> (range r) m
       (map (fn [_] (string "\e[0;34m" "~" "\e[0m")) m)
-      (fuse-over (editor-state :erows) m)
-      (zipwith string (make-row-numbers r) m)
+      (fuse-over (array/slice (editor-state :erows) 
+                              (min (length (editor-state :erows)) 
+                                   (editor-state :rowoffset))) 
+                 m)
+      (zipwith string (make-row-numbers r (inc (editor-state :rowoffset))) m)
       (welcome-message m sizes)
       (trim-to-width m c)
       (string/join m (string (esc "K") "\r\n"))
       (string m (esc "K")))))
 
-(editor-draw-rows)
+(comment 
+  (editor-draw-rows))
+
+(defn editor-scroll []
+  (let [cy (editor-state :cy) 
+        screen (editor-state :screenrows)]
+    (when (< cy 0) 
+      (do (when (> (editor-state :rowoffset) 0) 
+            (update editor-state :rowoffset dec))
+          (set (editor-state :cy) 0)))
+    (when (>= cy screen)
+      (do (update editor-state :rowoffset inc)
+          (update editor-state :cy dec)))))
 
 (defn editor-refresh-screen []
+  (editor-scroll)
   (var abuf @"")
 
   (buffer/push-string abuf (esc "?25l"))
@@ -108,17 +125,24 @@
 # Input
 
 (defn editor-move-cursor [key]
-  (let [ln (editor-state :linenumbers)]
+  (let [ln (editor-state :linenumbers)
+        cx (editor-state :cx)
+        cy (editor-state :cy)]
     (case key
-      1000 (when (not (= (editor-state :cx) (if ln 3 1)))
+      # Left Arrow
+      1000 (when (not (= cx (if ln 3 1)))
              (update editor-state :cx dec))
-      1001 (when (not (= (editor-state :cx)
-                         (- (editor-state :screencols) 1)))
+      
+      # Right Arrow
+      1001 (when (not (= cx (- (editor-state :screencols) 1)))
              (update editor-state :cx inc))
-      1002 (when (not (= (editor-state :cy) 0))
+      
+      # Up Arrow
+      1002 (when (not (= cy -1))
              (update editor-state :cy dec))
-      1003 (when (not (= (editor-state :cy)
-                         (- (editor-state :screenrows) 1)))
+      
+      # Down Arrow
+      1003 (when (not (= cy (editor-state :screenrows)))
              (update editor-state :cy inc)))))
 
 (defn toggle-line-numbers []
