@@ -21,7 +21,7 @@
 (var quit false)
 
 (var editor-state
-     @{:cx 4
+     @{:cx 0
        :cy 0
        :rememberx 0
        :rowoffset 0
@@ -66,22 +66,21 @@
   (let [dup (array/slice priority)]
     (array/concat dup (drop (length priority) secondary))))
 
-(defn welcome-message [m sizes]
+(defn add-welcome-message [rows]
   (if (deep= @[] (flatten (editor-state :erows)))
-    (let [r (sizes :rows)
-          c (sizes :cols)
+    (let [r (editor-state :screenrows)
+          c (editor-state :screencols)
           message (string "Joule editor -- version " version)
           message-row (math/trunc (/ r 2))
           message-col (- (math/trunc (/ c 2))
                          (math/trunc (/ (length message) 2)))
           pad (string/repeat " " (- message-col (if (editor-state :linenumbers) 4 2)))]
-      (update m message-row | (string $ pad message)))
-    m))
+      (update rows message-row | (string $ pad message))) rows))
 
-(defn trim-to-width [m c]
-  (map |(if (> (length $) (- c 1)) 
-          (string/slice $ 0 (- c 1))
-          $) m))
+(defn trim-to-width [rows]
+  (let [cols (- (editor-state :screencols) 1)]
+    (map |(if (> (length $) cols)
+             (string/slice $ 0 cols) $) rows)))
 
 (defn render-tabs [rows]
   (let [tabsize (get-in editor-state [:userconfig :tabsize])
@@ -93,57 +92,137 @@
                    (editor-state :rowoffset))
         end (min (length (editor-state :erows))
                  (+ (editor-state :rowoffset)
-                    (editor-state :screencols)))]
+                    (editor-state :screenrows)))]
     (array/slice rows start end)))
 
-(defn editor-draw-rows []
-  (let [sizes (get-window-size)
-        r (sizes :rows)
-        c (sizes :cols)]
-    (as-> (editor-state :erows) m
-      (render-tabs m)
-      (slice-rows m)
-      (map | (string/slice $ (min (length $) (editor-state :coloffset))) m)
-      (fuse-over m (map (fn [_] (string "\e[0;34m" "~" "\e[0m")) (range r)))
-      (zipwith string (make-row-numbers r (inc (editor-state :rowoffset))) m)
-      (welcome-message m sizes)
-      (trim-to-width m c)
-      (string/join m (string (esc "K") "\r\n"))
-      (string m (esc "K")))))
+(defn apply-h-scroll [rows]
+  (map |(string/slice $ 
+         (min (length $)
+              (editor-state :coloffset))) 
+       rows))
+
+(defn add-numbers [rows]
+  (let [r (editor-state :screenrows)
+        offset (editor-state :rowoffset)
+        rownums (make-row-numbers r (inc offset))] 
+    (zipwith string rownums rows)))
+
+(defn offset-cursor []
+  (let [margin (if (editor-state :linenumbers)
+                 (editor-state :leftmargin) 1)]
+    (update editor-state :cx |(+ $ margin))))
+
+(defn apply-margin [rows]
+  (as-> rows m
+    (add-numbers m)
+    (trim-to-width m)))
+
+(defn fill-empty-rows [rows]
+  (let [r (range (editor-state :screencols))
+        fill (map (fn [_] (string "\e[0;34m" "~" "\e[0m")) r)] 
+    (fuse-over rows fill)))
+
+(defn join-rows [rows]
+  (as-> (string/join rows (string (esc "K") "\r\n")) m
+        (string m (esc "K"))))
+
+(defn editor-update-rows []
+  (->> (array/slice (editor-state :erows))
+    (render-tabs)
+    (slice-rows) 
+    (apply-h-scroll)   
+    (add-welcome-message)
+    (apply-margin)
+    (join-rows)))
 
 (comment 
-  (editor-draw-rows))
+  (length (editor-update-rows)))
 
 # TODO: Implement buffer of lines to keep at top/bottom of screen
 # when scrolling up/down, based on [:userconfig :scrollpadding]
 
+(defn rowlen [row]
+  (if (and (< row 0) (= 0 (editor-state :rowoffset))) 0
+      (length (get-in editor-state
+                      [:erows
+                       (+ (editor-state :rowoffset)
+                          row)]))))
+
+(defn max-x [row]
+  (let [v-offset (editor-state :rowoffset)
+        h-offset (editor-state :coloffset)]
+    (min (- (rowlen row) h-offset)
+         (editor-state :screencols))))
+
+(defn move-viewport [direction]
+  (case direction
+    :up (update editor-state :rowoffset dec)
+    :down (update editor-state :rowoffset inc)
+    :left (update editor-state :coloffset dec)
+    :right (update editor-state :coloffset inc)
+    :home (set (editor-state :coloffset) 0)
+    :end (set (editor-state :coloffset)
+              (+ 10 (- (rowlen (editor-state :cy))
+                       (editor-state :screencols))))
+    :pageup (set (editor-state :rowoffset)
+                 (max 0 (- (editor-state :rowoffset)
+                           (dec (editor-state :screenrows)))))
+    :pagedown (set (editor-state :rowoffset)
+                   (+ (editor-state :rowoffset)
+                      (dec (editor-state :screenrows))))))
+
+(defn move-cursor-home []
+  (set (editor-state :cx) 0)
+  (move-viewport :home))
+
+(defn move-cursor-end []
+  (let [row-len (rowlen (editor-state :cy))
+        screen-h (editor-state :screencols)]
+    (set (editor-state :cx) (max-x (editor-state :cy)))
+    (if (> row-len screen-h)
+      (move-viewport :end)
+      (move-viewport :home))))
+
+(defn move-cursor [direction]
+  (case direction 
+    :up (update editor-state :cy dec)
+    :down (update editor-state :cy inc)
+    :left (update editor-state :cx dec)
+    :right (update editor-state :cx inc)
+    :home (move-cursor-home)
+    :end (move-cursor-end)))
+
+# Input
+
 (defn editor-scroll []
   (let [cx (editor-state :cx)
-        cy (editor-state :cy)
-        margin (if (editor-state :linenumbers) 
-                 (editor-state :leftmargin) 1)]
+        cy (editor-state :cy)]
     
     # Cursor off screen Top
     (when (< cy 0) 
       (do (when (> (editor-state :rowoffset) 0) 
-            (update editor-state :rowoffset dec))
+            (move-viewport :up))
           (set (editor-state :cy) 0)))
     
     # Cursor off screen Bottom
     (when (>= cy (editor-state :screenrows))
-      (do (update editor-state :rowoffset inc)
-          (update editor-state :cy dec)))
+      (do (move-viewport :down)
+          (move-cursor :up)))
     
     # Cursor off screen Left
-    (when (< cx margin)
+    (when (< cx 0)
       (do (when (> (editor-state :coloffset) 0)
-            (update editor-state :coloffset dec))
-          (set (editor-state :cx) margin)))
+            (move-viewport :left))
+          (set (editor-state :cx) 0)))
     
     # Cursor off screen Right
     (when (>= cx (editor-state :screencols))
-      (do (update editor-state :coloffset inc)
+      (do (move-viewport :right)
           (update editor-state :cx dec)))))
+
+(defn getmargin []
+  (if (editor-state :linenumbers)
+    (editor-state :leftmargin) 1))
 
 (defn editor-refresh-screen []
   (editor-scroll)
@@ -152,81 +231,58 @@
   (buffer/push-string abuf (esc "?25l"))
   (buffer/push-string abuf (esc "H"))
 
-  (buffer/push-string abuf (editor-draw-rows))
+  (buffer/push-string abuf (editor-update-rows))
 
   (buffer/push-string abuf (string/format (esc "%d;%dH")
                                           (inc (editor-state :cy))
-                                          (inc (editor-state :cx))))
+                                          (+ 1 (getmargin)
+                                               (editor-state :cx))))
 
   (buffer/push-string abuf (esc "?25h")) 
 
   (file/write stdout abuf)
   (file/flush stdout))
 
-# Input
+(defn move-cursor-with-mem [direction]
+  (let [cy (editor-state :cy)
+        cx (editor-state :cx)]
+    (case direction
+      :up (set (editor-state :cx)
+               (min (max (editor-state :rememberx) cx)
+                    (max-x (dec cy))))
+      :down (set (editor-state :cx)
+                 (min (max (editor-state :rememberx) cx)
+                      (max-x (inc cy))))
+      (move-cursor direction))))
 
-(defn rowlen [row]
-  (length (get-in editor-state [:erows (+ (editor-state :rowoffset) 
-                                          row)])))
+(defn wrap-to-end-of-prev-line []
+  (move-cursor :up)
+  (move-cursor :end))
 
-(defn max-x [row]
-  (let [margin (if (editor-state :linenumbers)
-                 (editor-state :leftmargin) 1)
-        v-offset (editor-state :rowoffset)
-        h-offset (editor-state :coloffset)] 
-    (min (- (+ margin (rowlen row)) h-offset) (editor-state :screencols))))
-
-(defn wrap-to-end-of-prev-line [margin cy] 
-  # Move cursor up one line
-  (update editor-state :cy dec)
-
-  # Move cursor to end of previous line, accounting for column offset
-  (set (editor-state :cx) (max-x (dec cy)))
-
-  # Update viewport if line goes off of current screen
-  (when (> (rowlen (dec cy)) (editor-state :screencols))
-    (set (editor-state :coloffset) 
-         (- (+ (rowlen (dec cy)) margin) 
-            (editor-state :screencols)))))
-
-(defn wrap-to-start-of-next-line [margin cx]
-  # Move cursor down one line
-  (update editor-state :cy inc)
-
-  # Move cursor to start of line
-  (set (editor-state :cx) margin)
-
-  # Reset viewport to zero
-  (set (editor-state :coloffset) 0)
-  
-  # Set horizontal memory to previous cx-value
-  (set (editor-state :rememberx) cx))
+(defn wrap-to-start-of-next-line []
+  (move-cursor :down)
+  (move-cursor :home))
 
 # TODO: Refactor this into something easier to reason about
 (defn editor-move-cursor [key]
-  (let [margin (if (editor-state :linenumbers)
-                 (editor-state :leftmargin) 1)
-        cx (editor-state :cx)
+  (let [cx (editor-state :cx)
         cy (editor-state :cy)
         v-offset (editor-state :rowoffset)]
     (case key
       #Left Arrow
-      1000 (do (if (= (editor-state :coloffset) 0)
-                 (if (or (> cy 0) (> v-offset 0))
-                   (wrap-to-end-of-prev-line margin cy)
-                   (update editor-state :cx dec))
-                 (update editor-state :cx dec))
+      1000 (do (if (and (= cx 0) (= (editor-state :coloffset) 0))
+                 (wrap-to-end-of-prev-line)
+                 (move-cursor :left))
                (set (editor-state :rememberx) 0)) 
 
       #Right Arrow
-      1001 (do (if (= cx (- (+ (rowlen cy) margin) (editor-state :coloffset)))
-                 (wrap-to-start-of-next-line margin cx)
-                 (when (not (= cx (editor-state :screencols)))
-                   (update editor-state :cx inc)))
+      1001 (do (if (= cx (- (rowlen cy) (editor-state :coloffset)))
+                 (wrap-to-start-of-next-line)
+                 (move-cursor :right))
                (set (editor-state :rememberx) 0))
 
       #Up Arrow
-      1002 (do (update editor-state :cy dec)
+      1002 (do (move-cursor :up)
                (when (> cy 0)
                  (set (editor-state :cx) (min (max (editor-state :rememberx) cx)
                                               (max-x (dec cy)))))
@@ -235,17 +291,14 @@
 
       #Down Arrow
       1003 (when (not (= cy (editor-state :screenrows)))
-             (update editor-state :cy inc)
+             (move-cursor :down)
              (set (editor-state :cx) (min (max (editor-state :rememberx) cx) 
                                           (max-x (inc cy))))
              (when (> cx (editor-state :rememberx)) 
                  (set (editor-state :rememberx) cx))))))
 
 (defn toggle-line-numbers []
-  (let [margin (dec (editor-state :leftmargin))
-        dc (if (editor-state :linenumbers) (- margin) margin)]
-    (update editor-state :linenumbers not)
-    (update editor-state :cx |(+ $ dc))))
+  (update editor-state :linenumbers not))
 
 (defn editor-process-keypress []
   (let [key (read-key)]
@@ -254,9 +307,8 @@
       (ctrl-key (chr "n")) (toggle-line-numbers)
 
       # TODO: Fix Pageup and Pagedown behavior
-      1004 (set (editor-state :rowoffset) (max 0 (- (editor-state :rowoffset)
-                                                    (editor-state :screenrows))))
-      1005 (update editor-state :rowoffset |(+ $ (editor-state :screenrows)))
+      1004 (move-viewport :pageup)
+      1005 (move-viewport :pagedown)
       
       1006 (do (set (editor-state :cx) 0)
                (set (editor-state :coloffset) 0))
