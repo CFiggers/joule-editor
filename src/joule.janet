@@ -126,8 +126,6 @@
   (as-> (string/join rows (string (esc "K") "\r\n")) m
         (string m (esc "K"))))
 
-# BUG: Crashes at EOF
-
 (defn editor-update-rows []
   (->> (array/slice (editor-state :erows))
        (render-tabs)
@@ -145,11 +143,12 @@
 # when scrolling up/down, based on [:userconfig :scrollpadding]
 
 (defn rowlen [row]
-  (if (and (< row 0) (= 0 (editor-state :rowoffset))) 0
-      (length (get-in editor-state
-                      [:erows
-                       (+ (editor-state :rowoffset)
-                          row)]))))
+  (if-let [erow (get-in editor-state
+                        [:erows
+                         (+ (editor-state :rowoffset)
+                            row)])]
+    (length erow) 
+    0))
 
 (defn max-x [row]
   (let [v-offset (editor-state :rowoffset)
@@ -163,10 +162,12 @@
     :down (update editor-state :rowoffset inc)
     :left (update editor-state :coloffset dec)
     :right (update editor-state :coloffset inc)
+    
     :home (set (editor-state :coloffset) 0)
     :end (set (editor-state :coloffset)
               (+ 10 (- (rowlen (editor-state :cy))
                        (editor-state :screencols))))
+    
     :pageup (set (editor-state :rowoffset)
                  (max 0 (- (editor-state :rowoffset)
                            (dec (editor-state :screenrows)))))
@@ -175,16 +176,16 @@
                       (dec (editor-state :screenrows))))))
 
 (defn move-cursor-home []
-  (set (editor-state :cx) 0)
-  (move-viewport :home))
+  (move-viewport :home)
+  (set (editor-state :cx) 0))
 
 (defn move-cursor-end []
   (let [row-len (rowlen (editor-state :cy))
         screen-h (editor-state :screencols)]
-    (set (editor-state :cx) (max-x (editor-state :cy)))
     (if (> row-len screen-h)
       (move-viewport :end)
-      (move-viewport :home))))
+      (move-viewport :home))
+    (set (editor-state :cx) (max-x (editor-state :cy)))))
 
 (defn move-cursor [direction]
   (case direction 
@@ -196,6 +197,10 @@
     :end (move-cursor-end)))
 
 # Input
+
+(defn get-margin []
+  (if (editor-state :linenumbers)
+    (editor-state :leftmargin) 1))
 
 (defn editor-scroll []
   (let [cx (editor-state :cx)
@@ -219,15 +224,17 @@
           (set (editor-state :cx) 0)))
     
     # Cursor off screen Right
-    (when (>= cx (editor-state :screencols))
+    (when (>= cx (- (editor-state :screencols) (get-margin)))
       (do (move-viewport :right)
           (update editor-state :cx dec)))))
 
-(defn getmargin []
-  (if (editor-state :linenumbers)
-    (editor-state :leftmargin) 1))
+(defn update-screen-sizes []
+  (let [sizes (get-window-size)]
+    (set (editor-state :screencols) (sizes :cols))
+    (set (editor-state :screenrows) (sizes :rows))))
 
 (defn editor-refresh-screen []
+  (update-screen-sizes)
   (editor-scroll)
   (var abuf @"")
 
@@ -238,7 +245,7 @@
 
   (buffer/push-string abuf (string/format (esc "%d;%dH")
                                           (inc (editor-state :cy))
-                                          (+ 1 (getmargin)
+                                          (+ 1 (get-margin)
                                                (editor-state :cx))))
 
   (buffer/push-string abuf (esc "?25h")) 
@@ -305,19 +312,17 @@
 
 (defn editor-process-keypress []
   (let [key (read-key)]
-    (case key 
+    (case key
       (ctrl-key (chr "q")) (set quit true)
       (ctrl-key (chr "n")) (toggle-line-numbers)
 
-      # TODO: Fix Pageup and Pagedown behavior
       1004 (move-viewport :pageup)
       1005 (move-viewport :pagedown)
-      
-      1006 (do (set (editor-state :cx) 0)
-               (set (editor-state :coloffset) 0))
-      
-      # TODO: Fix End key behavior
-      1007 (do (set (editor-state :cx) (max-x (editor-state :cy))))
+
+      1006 (move-cursor :home)
+      1007 (move-cursor :end)
+
+      # Default
       (editor-move-cursor key))))
 
 # File i/o
