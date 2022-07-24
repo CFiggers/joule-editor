@@ -127,16 +127,16 @@
         (string m (esc "K"))))
 
 # BUG: Crashes at EOF
-# BUG: No longer loads correctly if given no filename
 
 (defn editor-update-rows []
   (->> (array/slice (editor-state :erows))
-    (render-tabs)
-    (slice-rows) 
-    (apply-h-scroll)   
-    (add-welcome-message)
-    (apply-margin)
-    (join-rows)))
+       (render-tabs)
+       (slice-rows)
+       (apply-h-scroll)
+       (fill-empty-rows)
+       (add-welcome-message)
+       (apply-margin)
+       (join-rows)))
 
 (comment 
   (length (editor-update-rows)))
