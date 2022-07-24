@@ -126,6 +126,9 @@
   (as-> (string/join rows (string (esc "K") "\r\n")) m
         (string m (esc "K"))))
 
+# BUG: Crashes at EOF
+# BUG: No longer loads correctly if given no filename
+
 (defn editor-update-rows []
   (->> (array/slice (editor-state :erows))
     (render-tabs)
