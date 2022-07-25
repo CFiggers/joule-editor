@@ -1,8 +1,3 @@
-#Uncomment to use `janet-lang/spork `helper functions.
-#(use spork)
-
-### Includes ###
-
 (use janet-termios)
 
 ### Definitions ###
@@ -13,6 +8,8 @@
 ### Data ###
 
 (var quit false)
+
+# TODO: Implement multiple "tabs"/buffers open simultaneously
 
 (var editor-state
      @{:cx 0
@@ -50,6 +47,32 @@
     (for i 0 n
          (array/push result (f (get col1 i) (get col2 i))))
     result))
+
+(defn abs-x []
+  (+ (editor-state :cx) (editor-state :coloffset)))
+
+(defn abs-y []
+  (+ (editor-state :cy) (editor-state :rowoffset)))
+
+(defn string/insert [str at & xs]
+  (def at (if (= -1 at) (length str) at))
+  (assert (<= at (length str)) 
+          "Can't string/insert: `at` larger than `str`")
+  (string
+     (string/slice str 0 at)
+     (string ;xs)
+     (string/slice str (- (inc (- (length str) at))))))
+
+(defn string/cut [str at &opt until]
+  (assert (pos? at) "Can't string/cut: `at` is negative")
+  (assert (>= until at) "Can't string/cut: `until` is less than `at`")
+  (if (not until)
+    (string
+     (string/slice str 0 at)
+     (string/slice str (- at (length str))))))
+
+(defn update-erow [row f]
+  (update-in editor-state [:erows row] f))
 
 ### Editor State Functions ###
 
@@ -99,7 +122,7 @@
     
     :home (set (editor-state :coloffset) 0)
     :end (set (editor-state :coloffset)
-              (+ 10 (- (rowlen (editor-state :cy))
+              (+ 10 (- (rowlen (abs-y))
                        (editor-state :screencols))))
     
     :pageup (set (editor-state :rowoffset)
@@ -114,12 +137,12 @@
   (set (editor-state :cx) 0))
 
 (defn move-cursor-end []
-  (let [row-len (rowlen (editor-state :cy))
+  (let [row-len (rowlen (abs-y))
         screen-h (- (editor-state :screencols) (get-margin))]
     (if (> row-len screen-h)
       (move-viewport :end)
       (move-viewport :home))
-    (set (editor-state :cx) (max-x (editor-state :cy)))))
+    (set (editor-state :cx) (max-x (abs-y)))))
 
 (defn move-cursor [direction]
   (case direction 
@@ -156,16 +179,16 @@
       (do (move-viewport :right)
           (update editor-state :cx dec)))))
 
-
 (defn move-cursor-with-mem [direction]
   (let [cy (editor-state :cy)
         cx (editor-state :cx)]
     (move-cursor direction)
     # Move cursor to either end of new line (if shorter)
     # or same point on line as x memory (if longer)
-    (set (editor-state :cx)
-         (min (max (editor-state :rememberx) cx)
-              (max-x (dec cy))))))
+    (let [f (case direction :up dec :down inc)]
+      (set (editor-state :cx)
+           (min (max (editor-state :rememberx) cx)
+                (max-x (f cy)))))))
 
 (defn update-x-memory [cx]
   (when (> cx (editor-state :rememberx))
@@ -259,9 +282,7 @@
 (defn add-status-bar [rows]
   (let [leftpad (string/repeat " " (get-margin))
         filename (editor-state :filename)
-        true-y (+ (editor-state :cy) (editor-state :rowoffset))
-        true-x (+ (editor-state :cx) (editor-state :coloffset))
-        cursor-pos (string true-y ":" true-x)
+        cursor-pos (string (inc (abs-y)) ":" (abs-x))
         midpad (string/repeat " " (- (editor-state :screencols)
                                   ;(map safe-len [filename cursor-pos leftpad])
                                      2))
@@ -313,25 +334,53 @@
 ### Input ###
 
 (defn editor-handle-typing [key]
-  (let [cx (editor-state :cx)
-        cy (editor-state :cy)
-        v-offset (editor-state :rowoffset)]
-    # (case key
-    #   )
-    ))
+  (let [char (string/format "%c" key)]
+    (update-erow (abs-y) |(string/insert $ (abs-x) char))
+    (move-cursor :right)))
+
+(defn carriage-return []
+  (let [last-line (string/slice ((editor-state :erows) (abs-y))  0 (abs-x)) 
+        next-line (string/slice ((editor-state :erows) (abs-y))  (abs-x)) ]
+    (update-erow (abs-y)  (fn [_] last-line))
+    (update editor-state :erows
+      |(array/insert $ (abs-y) next-line))))
+
+(defn delete-char [direction]
+  (case direction
+    :last (do (update-erow (abs-y) |(string/cut $ (dec (abs-x))))
+                  (move-cursor :left))
+    :current (update-erow (abs-y) |(string/cut $ (abs-x)))))
+
+(defn backspace-back-to-prev-line []
+  (let [current-line (get-in editor-state [:erows (abs-y)] )]
+    (move-cursor :up)
+    (move-cursor :end) 
+    # drop line being left
+    (update editor-state :erows 
+            |(array/remove $ (abs-y)))
+    # append current-line to new line
+    (update-erow (dec (abs-y)) |(string $ current-line))))
+
+(defn delete-next-line-up []
+  (unless (= (abs-y) (safe-len (editor-state :erows)))
+    (let [next-line (get-in editor-state [:erows (inc (abs-y))])]
+      (update-erow (abs-y) |(string $ next-line))
+      (update editor-state :erows 
+              |(array/remove $ (inc (abs-y)))))))
 
 (defn editor-process-keypress []
-  (let [key (read-key)
+  (let [key (read-key) #Blocks waiting on keystroke
         cx (editor-state :cx)
         cy (editor-state :cy)
-        v-offset (editor-state :rowoffset)]
+        v-offset (editor-state :rowoffset)
+        h-offset (editor-state :coloffset)]
     (case key
       (ctrl-key (chr "q")) (set quit true)
       (ctrl-key (chr "n")) (toggle-line-numbers)
 
       # PageUp and PageDown
       # If on home page of file
-      1004 (if (= 0 (editor-state :rowoffset)) 
+      1004 (if (= 0 v-offset) 
              (do (move-cursor :home)
                  (set (editor-state :cy) 0))
              (move-viewport :pageup))
@@ -343,21 +392,21 @@
 
       # Left Arrow
       # If cursor at margin and viewport at far left
-      1000 (do (if (and (= cx 0) (= (editor-state :coloffset) 0))
+      1000 (do (if (= (abs-x) 0)
                  (wrap-to-end-of-prev-line)
                  (move-cursor :left))
                (set (editor-state :rememberx) 0))
 
       # Right Arrow
       # If cursor at end of current line, accounting for horizontal scrolling
-      1001 (do (if (= cx (- (rowlen cy) (editor-state :coloffset)))
+      1001 (do (if (= cx (rowlen (abs-y)))
                  (wrap-to-start-of-next-line)
                  (move-cursor :right))
                (set (editor-state :rememberx) 0))
 
       # Up Arrow
       # If on top row of file
-      1002 (do (if (and (= cy 0) (= (editor-state :rowoffset) 0))
+      1002 (do (if (= (abs-y) 0)
                  (move-cursor :home)
                  (move-cursor-with-mem :up)) 
                (update-x-memory cx))
@@ -368,7 +417,30 @@
       
       # TODO: Enter
 
-      # TODO: Escape
+      # Escape
+
+      # Backspace
+      127 (cond 
+            # On top line and home row of file; do nothing
+            (and (= (abs-x) 0) (= (abs-y) 0)) (break)
+            # Cursor below last file line; cursor up
+            (> (abs-x) (safe-len (editor-state :erows))) (move-cursor :up)
+            # Cursor at margin and viewport far left
+            (= (abs-x) 0) (backspace-back-to-prev-line)
+            # Otherwise
+            (delete-char :last))
+
+      # Delete
+      1008 (cond 
+             # On last line and end of row of file; do nothing
+             (and (= (abs-x) (rowlen (abs-y)))
+                  (= (abs-y) (length (editor-state :erows)))) (break)
+             # Cursor at end of current line
+             (= cx (- (rowlen cy) h-offset)) (delete-next-line-up) 
+             # Cursor below last file line; cursor up
+             (> (abs-x) (safe-len (editor-state :erows))) (break)
+             # Otherwise
+             (delete-char :current))
 
       # TODO: Function row
 
@@ -382,6 +454,10 @@
     (set (editor-state :filename) filename)
     (set (editor-state :erows) erows)))
 
+(defn save-file [filename]
+  # TODO
+  )
+
 (defn editor-open [args]
   (when-let [file (first (drop 1 args))]
     (load-file file)
@@ -391,8 +467,8 @@
 
 # TODO: Implement user config dotfile
 
-# (defn load-config []
-#   )
+(defn load-config [] 
+  )
 
 (defn init [args]
   (when (= (os/which) :linux) 
