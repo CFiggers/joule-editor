@@ -1,32 +1,16 @@
 #Uncomment to use `janet-lang/spork `helper functions.
 #(use spork)
 
-# Includes
+### Includes ###
 
 (use janet-termios)
 
-# Definitions
+### Definitions ###
 
 (def version
   "0.0.1")
 
-(defn esc [c]
-  (string "\x1b[" c))
-
-(defn ctrl-key [k]
-  (band k 0x1f))
-
-(defn safe-len [arg]
-  (try (length arg) ([err fib] 0)))
-
-(defn zipwith [f col1 col2]
-  (var result @[])
-  (let [n (min (safe-len col1) (safe-len col2))]
-    (for i 0 n
-         (array/push result (f (get col1 i) (get col2 i))))
-    result))
-
-# Data
+### Data ###
 
 (var quit false)
 
@@ -46,130 +30,36 @@
        :screencols ((get-window-size) :cols)
        :userconfig @{:scrollpadding 5
                      :tabsize 4
-                     :indentwith :spaces}})
+                     :indentwith :spaces
+                     :numtype :on}})
+
+### Utility Functions ###
+
+(defn esc [c]
+  (string "\x1b[" c))
+
+(defn ctrl-key [k]
+  (band k 0x1f))
+
+(defn safe-len [arg]
+  (try (length arg) ([err fib] 0)))
+
+(defn zipwith [f col1 col2]
+  (var result @[])
+  (let [n (min (safe-len col1) (safe-len col2))]
+    (for i 0 n
+         (array/push result (f (get col1 i) (get col2 i))))
+    result))
+
+### Editor State Functions ###
 
 (defn send-status-msg [msg]
   (set (editor-state :statusmsg) msg)
   (set (editor-state :statusmsgtime) (os/time)))
 
-# Terminal
-
-(defn die [s]
-  (prin "\x1b[2J")
-  (prin "\x1b[H")
-
-  (eprint s))
-
 (defn get-margin []
   (if (editor-state :linenumbers)
     (editor-state :leftmargin) 1))
-
-# Output
-
-(defn make-row-numbers [n &opt start-n]
-  (default start-n 1)
-  (let [high-n (+ n start-n)
-        margin (max 3 (safe-len (string high-n)))]
-    (set (editor-state :leftmargin) (inc margin))
-    (if (editor-state :linenumbers)
-      (map | (string/format (string "%" margin "s ") (string $))
-           (range start-n high-n))
-      (map (fn [_] " ") (range n)))))
-
-(defn fuse-over [priority secondary]
-  (let [dup (array/slice priority)]
-    (array/concat dup (drop (safe-len priority) secondary))))
-
-(defn add-welcome-message [rows]
-  (if (deep= @[] (flatten (editor-state :erows)))
-    (let [r (editor-state :screenrows)
-          c (editor-state :screencols)
-          message (string "Joule editor -- version " version)
-          message-row (math/trunc (/ r 2))
-          message-col (- (math/trunc (/ c 2))
-                         (math/trunc (/ (safe-len message) 2)))
-          pad (string/repeat " " (- message-col (if (editor-state :linenumbers) 4 2)))]
-      (update rows message-row | (string $ pad message))) rows))
-
-(defn trim-to-width [rows]
-  (let [cols (- (editor-state :screencols) 1)]
-    (map |(if (> (safe-len $) cols)
-             (string/slice $ 0 cols) $) rows)))
-
-(defn render-tabs [rows]
-  (let [tabsize (get-in editor-state [:userconfig :tabsize])
-        spaces (string/repeat " " tabsize)]
-    (map |(string/replace-all "\t" spaces $) rows)))
-
-(defn slice-rows [rows]
-  (let [start (min (safe-len (editor-state :erows))
-                   (editor-state :rowoffset))
-        end (min (safe-len (editor-state :erows))
-                 (+ (editor-state :rowoffset)
-                    (editor-state :screenrows)))]
-    (array/slice rows start end)))
-
-(defn apply-h-scroll [rows]
-  (map |(string/slice $ 
-         (min (safe-len $)
-              (editor-state :coloffset))) 
-       rows))
-
-(defn add-numbers [rows]
-  (let [r (editor-state :screenrows)
-        offset (editor-state :rowoffset)
-        rownums (make-row-numbers r (inc offset))] 
-    (zipwith string rownums rows)))
-
-(defn offset-cursor []
-  (let [margin (get-margin)]
-    (update editor-state :cx |(+ $ margin))))
-
-(defn apply-margin [rows]
-  (as-> rows m
-    (add-numbers m)))
-
-(defn fill-empty-rows [rows]
-  (let [r (range (editor-state :screencols))
-        fill (map (fn [_] (string "\e[0;34m" "~" "\e[0m")) r)] 
-    (fuse-over rows fill)))
-
-(defn add-status-bar [rows]
-  (let [leftpad (string/repeat " " (get-margin))
-        filename (editor-state :filename)
-        true-y (+ (editor-state :cy) (editor-state :rowoffset))
-        true-x (+ (editor-state :cx) (editor-state :coloffset))
-        cursor-pos (string true-y ":" true-x)
-        midpad (string/repeat " " (- (editor-state :screencols)
-                                  ;(map safe-len [filename cursor-pos leftpad])
-                                     2))
-        filenamef (string "\e[1;4m" filename "\e[m")
-        statusmsg (if (< (- (os/time) (editor-state :statusmsgtime)) 5)
-                    (editor-state :statusmsg) "")]
-    (array/push rows (string leftpad filenamef midpad cursor-pos))
-    (array/push rows (string leftpad statusmsg))))
-
-(defn join-rows [rows]
-  (as-> (string/join rows (string (esc "K") "\r\n")) m
-        (string m (esc "K"))))
-
-(defn editor-update-rows []
-  (->> (array/slice (editor-state :erows))
-       (render-tabs)
-       (slice-rows)
-       (apply-h-scroll)
-       (fill-empty-rows)
-       (add-welcome-message)
-       (apply-margin)
-       (trim-to-width)
-       (add-status-bar)
-       (join-rows)))
-
-(comment 
-  (safe-len (editor-update-rows)))
-
-# TODO: Implement buffer of lines to keep at top/bottom of screen
-# when scrolling up/down, based on [:userconfig :scrollpadding]
 
 (defn rowlen [row]
   (if-let [erow (get-in editor-state
@@ -184,6 +74,21 @@
         h-offset (editor-state :coloffset)]
     (min (- (rowlen row) h-offset)
          (editor-state :screencols))))
+
+(defn toggle-line-numbers []
+  (update editor-state :linenumbers not))
+
+### Terminal ###
+
+(defn update-screen-sizes []
+  (let [sizes (get-window-size)]
+    (set (editor-state :screencols) (sizes :cols))
+    (set (editor-state :screenrows) (- (sizes :rows) 2))))
+
+### Movement ###
+
+# TODO: Implement buffer of lines to keep at top/bottom of screen
+# when scrolling up/down, based on [:userconfig :scrollpadding]
 
 (defn move-viewport [direction]
   (case direction
@@ -225,8 +130,6 @@
     :home (move-cursor-home)
     :end (move-cursor-end)))
 
-# Input
-
 (defn editor-scroll []
   (let [cx (editor-state :cx)
         cy (editor-state :cy)]
@@ -253,10 +156,139 @@
       (do (move-viewport :right)
           (update editor-state :cx dec)))))
 
-(defn update-screen-sizes []
-  (let [sizes (get-window-size)]
-    (set (editor-state :screencols) (sizes :cols))
-    (set (editor-state :screenrows) (- (sizes :rows) 2))))
+
+(defn move-cursor-with-mem [direction]
+  (let [cy (editor-state :cy)
+        cx (editor-state :cx)]
+    (move-cursor direction)
+    # Move cursor to either end of new line (if shorter)
+    # or same point on line as x memory (if longer)
+    (set (editor-state :cx)
+         (min (max (editor-state :rememberx) cx)
+              (max-x (dec cy))))))
+
+(defn update-x-memory [cx]
+  (when (> cx (editor-state :rememberx))
+    (set (editor-state :rememberx) cx)))
+
+(defn wrap-to-end-of-prev-line []
+  (move-cursor :up)
+  (move-cursor :end))
+
+(defn wrap-to-start-of-next-line []
+  (move-cursor :down)
+  (move-cursor :home))
+
+### Output ###
+
+(defn fuse-over [priority secondary]
+  (let [dup (array/slice priority)]
+    (array/concat dup (drop (safe-len priority) secondary))))
+
+(defn add-welcome-message [rows]
+  (if (deep= @[] (flatten (editor-state :erows)))
+    (let [r (editor-state :screenrows)
+          c (editor-state :screencols)
+          message (string "Joule editor -- version " version)
+          message-row (math/trunc (/ r 2))
+          message-col (- (math/trunc (/ c 2))
+                         (math/trunc (/ (safe-len message) 2)))
+          pad (string/repeat " " (- message-col (if (editor-state :linenumbers) 4 2)))]
+      (update rows message-row | (string $ pad message))) rows))
+
+(defn trim-to-width [rows]
+  (let [cols (- (editor-state :screencols) 1)]
+    (map |(if (> (safe-len $) cols)
+             (string/slice $ 0 cols) $) rows)))
+
+(defn render-tabs [rows]
+  (let [tabsize (get-in editor-state [:userconfig :tabsize])
+        spaces (string/repeat " " tabsize)]
+    (map |(string/replace-all "\t" spaces $) rows)))
+
+(defn slice-rows [rows]
+  (let [start (min (safe-len (editor-state :erows))
+                   (editor-state :rowoffset))
+        end (min (safe-len (editor-state :erows))
+                 (+ (editor-state :rowoffset)
+                    (editor-state :screenrows)))]
+    (array/slice rows start end)))
+
+(defn apply-h-scroll [rows]
+  (map |(string/slice $ 
+         (min (safe-len $)
+              (editor-state :coloffset))) 
+       rows))
+
+(defn offset-cursor []
+  (let [margin (get-margin)]
+    (update editor-state :cx | (+ $ margin))))
+
+(defn make-row-numbers [n &opt start-n]
+  (default start-n 1)
+  (let [high-n (+ n start-n)
+        margin (max 3 (safe-len (string high-n)))]
+    (set (editor-state :leftmargin) (inc margin))
+    (if (editor-state :linenumbers)
+      (map | (string/format (string "%" margin "s ") (string $))
+           (range start-n high-n))
+      (map (fn [_] " ") (range n)))))
+
+(defn add-line-numbers [rows]
+  (let [r (editor-state :screenrows)
+        offset (editor-state :rowoffset)
+        rownums (make-row-numbers r (inc offset))] 
+    (zipwith string rownums rows)))
+
+(defn add-relative-numbers [rows]
+  # TODO: Implement relative line numbers
+  rows)
+
+(defn apply-margin [rows]
+  (let [numtype (get-in editor-state [:userconfig :numtype])]
+    (case numtype
+      :on (add-line-numbers rows)
+      :relative (add-relative-numbers rows)
+      :off rows)))
+
+(defn fill-empty-rows [rows]
+  (let [r (range (editor-state :screencols))
+        fill (map (fn [_] (string "\e[0;34m" "~" "\e[0m")) r)] 
+    (fuse-over rows fill)))
+
+(defn add-status-bar [rows]
+  (let [leftpad (string/repeat " " (get-margin))
+        filename (editor-state :filename)
+        true-y (+ (editor-state :cy) (editor-state :rowoffset))
+        true-x (+ (editor-state :cx) (editor-state :coloffset))
+        cursor-pos (string true-y ":" true-x)
+        midpad (string/repeat " " (- (editor-state :screencols)
+                                  ;(map safe-len [filename cursor-pos leftpad])
+                                     2))
+        filenamef (string "\e[1;4m" filename "\e[m")
+        statusmsg (if (< (- (os/time) (editor-state :statusmsgtime)) 5)
+                    (editor-state :statusmsg) "")]
+    (array/push rows (string leftpad filenamef midpad cursor-pos))
+    (array/push rows (string leftpad statusmsg))))
+
+(defn join-rows [rows]
+  (as-> (string/join rows (string (esc "K") "\r\n")) m
+        (string m (esc "K"))))
+
+(defn editor-update-rows []
+  (->> (array/slice (editor-state :erows))
+       (render-tabs)
+       (slice-rows)
+       (apply-h-scroll)
+       (fill-empty-rows)
+       (add-welcome-message)
+       (apply-margin)
+       (trim-to-width)
+       (add-status-bar)
+       (join-rows)))
+
+(comment 
+  (safe-len (editor-update-rows)))
 
 (defn editor-refresh-screen []
   (update-screen-sizes)
@@ -278,27 +310,8 @@
   (file/write stdout abuf)
   (file/flush stdout))
 
-(defn move-cursor-with-mem [direction]
-  (let [cy (editor-state :cy)
-        cx (editor-state :cx)]
-    (case direction
-      :up (set (editor-state :cx)
-               (min (max (editor-state :rememberx) cx)
-                    (max-x (dec cy))))
-      :down (set (editor-state :cx)
-                 (min (max (editor-state :rememberx) cx)
-                      (max-x (inc cy))))
-      (move-cursor direction))))
+### Input ###
 
-(defn wrap-to-end-of-prev-line []
-  (move-cursor :up)
-  (move-cursor :end))
-
-(defn wrap-to-start-of-next-line []
-  (move-cursor :down)
-  (move-cursor :home))
-
-# TODO: Refactor this into something easier to reason about
 (defn editor-handle-typing [key]
   (let [cx (editor-state :cx)
         cy (editor-state :cy)
@@ -306,9 +319,6 @@
     # (case key
     #   )
     ))
-
-(defn toggle-line-numbers []
-  (update editor-state :linenumbers not))
 
 (defn editor-process-keypress []
   (let [key (read-key)
@@ -319,44 +329,42 @@
       (ctrl-key (chr "q")) (set quit true)
       (ctrl-key (chr "n")) (toggle-line-numbers)
 
-      #PageUp and PageDown
+      # PageUp and PageDown
+      # If on home page of file
       1004 (if (= 0 (editor-state :rowoffset)) 
              (do (move-cursor :home)
                  (set (editor-state :cy) 0))
              (move-viewport :pageup))
       1005 (move-viewport :pagedown)
 
-      #Home and End
+      # Home and End
       1006 (move-cursor :home)
       1007 (move-cursor :end)
 
-      #Left Arrow
+      # Left Arrow
+      # If cursor at margin and viewport at far left
       1000 (do (if (and (= cx 0) (= (editor-state :coloffset) 0))
                  (wrap-to-end-of-prev-line)
                  (move-cursor :left))
                (set (editor-state :rememberx) 0))
 
-      #Right Arrow
+      # Right Arrow
+      # If cursor at end of current line, accounting for horizontal scrolling
       1001 (do (if (= cx (- (rowlen cy) (editor-state :coloffset)))
                  (wrap-to-start-of-next-line)
                  (move-cursor :right))
                (set (editor-state :rememberx) 0))
 
-      #Up Arrow
-      1002 (do (move-cursor :up)
-               (when (> cy 0)
-                 (set (editor-state :cx) (min (max (editor-state :rememberx) cx)
-                                              (max-x (dec cy)))))
-               (when (> cx (editor-state :rememberx))
-                 (set (editor-state :rememberx) cx)))
+      # Up Arrow
+      # If on top row of file
+      1002 (do (if (and (= cy 0) (= (editor-state :rowoffset) 0))
+                 (move-cursor :home)
+                 (move-cursor-with-mem :up)) 
+               (update-x-memory cx))
 
-      #Down Arrow
-      1003 (when (not (= cy (editor-state :screenrows)))
-             (move-cursor :down)
-             (set (editor-state :cx) (min (max (editor-state :rememberx) cx)
-                                          (max-x (inc cy))))
-             (when (> cx (editor-state :rememberx))
-               (set (editor-state :rememberx) cx)))
+      # Down Arrow
+      1003 (do (move-cursor-with-mem :down)
+               (update-x-memory cx))
       
       # TODO: Enter
 
@@ -386,14 +394,24 @@
 # (defn load-config []
 #   )
 
-(defn main [& args]
+(defn init [args]
+  (when (= (os/which) :linux) 
+    (prin "\e[?1049h]"))
   (enable-raw-mode)
-  (editor-open args)
+  (editor-open args))
+
+(defn exit []
+  (prin "\x1b[2J")
+  (prin "\x1b[H")
+  (disable-raw-mode)
+  (when (= (os/which) :linux)
+    (prin "\e[?1049l")))
+
+(defn main [& args]
+  (init args)
 
   (while (not quit)
     (editor-refresh-screen)
     (editor-process-keypress))
 
-  (prin "\x1b[2J")
-  (prin "\x1b[H")
-  (disable-raw-mode))
+  (exit))
