@@ -176,7 +176,7 @@
           (update editor-state :cx dec)))))
 
 (defn move-cursor-with-mem [direction]
-  (let [cy (editor-state :cy)
+  (let [currenty (abs-y)
         cx (editor-state :cx)]
     (move-cursor direction)
     # Move cursor to either end of new line (if shorter)
@@ -184,7 +184,7 @@
     (let [f (case direction :up dec :down inc)]
       (set (editor-state :cx)
            (min (max (editor-state :rememberx) cx)
-                (max-x (f (abs-y))))))))
+                (max-x (f currenty)))))))
 
 (defn update-x-memory [cx]
   (when (> cx (editor-state :rememberx))
