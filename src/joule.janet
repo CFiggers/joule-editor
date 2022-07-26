@@ -205,15 +205,25 @@
     (array/concat dup (drop (safe-len priority) secondary))))
 
 (defn add-welcome-message [rows]
+  (def messages @[(string "Joule editor -- version " version)
+                  ""
+                  "Ctrl + q                quit"
+                  "Ctrl + s                save"
+                  "Ctrl + n      toggle numbers"])
   (if (deep= @[] (flatten (editor-state :erows)))
     (let [r (editor-state :screenrows)
           c (editor-state :screencols)
-          message (string "Joule editor -- version " version)
-          message-row (math/trunc (/ r 2))
-          message-col (- (math/trunc (/ c 2))
-                         (math/trunc (/ (safe-len message) 2)))
-          pad (string/repeat " " (- message-col (if (editor-state :linenumbers) 4 2)))]
-      (update rows message-row | (string $ pad message))) rows))
+          message-start-rows (- (math/trunc (/ r 2))
+                               (math/trunc (/ (safe-len messages) 2)))
+          message-cols (map |(- (math/trunc (/ c 2))
+                         (math/trunc (/ (safe-len $) 2))) messages)
+          pads (map |(string/repeat " " (- $ (if (editor-state :linenumbers) 4 2)))
+                    (message-cols))]
+      (map (fn [i] (update rows (message-start-rows i) 
+                           |(string $ (pads i) 
+                                    (messages i)))) 
+           (range (safe-len rows))))
+    rows))
 
 (defn trim-to-width [rows]
   (let [cols (- (editor-state :screencols) 1)]
