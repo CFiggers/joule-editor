@@ -64,7 +64,7 @@
      (string/slice str (- (inc (- (length str) at))))))
 
 (defn string/cut [str at &opt until]
-  (assert (pos? at) "Can't string/cut: `at` is negative")
+  (assert (>= at 0) "Can't string/cut: `at` is negative")
   (assert (>= until at) "Can't string/cut: `until` is less than `at`")
   (if (not until)
     (string
@@ -85,16 +85,12 @@
     (editor-state :leftmargin) 1))
 
 (defn rowlen [row]
-  (if-let [erow (get-in editor-state
-                        [:erows
-                         (+ (editor-state :rowoffset)
-                            row)])]
+  (if-let [erow (get-in editor-state [:erows row])]
     (safe-len erow) 
     0))
 
 (defn max-x [row]
-  (let [v-offset (editor-state :rowoffset)
-        h-offset (editor-state :coloffset)]
+  (let [h-offset (editor-state :coloffset)]
     (min (- (rowlen row) h-offset)
          (editor-state :screencols))))
 
@@ -188,7 +184,7 @@
     (let [f (case direction :up dec :down inc)]
       (set (editor-state :cx)
            (min (max (editor-state :rememberx) cx)
-                (max-x (f cy)))))))
+                (max-x (f (abs-y))))))))
 
 (defn update-x-memory [cx]
   (when (> cx (editor-state :rememberx))
@@ -334,9 +330,10 @@
 ### Input ###
 
 (defn editor-handle-typing [key]
-  (let [char (string/format "%c" key)]
-    (update-erow (abs-y) |(string/insert $ (abs-x) char))
-    (move-cursor :right)))
+  (unless (> (abs-y) (safe-len (editor-state :erows)))
+          (let [char (string/format "%c" key)]
+            (update-erow (abs-y) | (string/insert $ (abs-x) char))
+            (move-cursor :right))))
 
 (defn carriage-return []
   (let [last-line (string/slice ((editor-state :erows) (abs-y))  0 (abs-x)) 
@@ -352,14 +349,15 @@
     :current (update-erow (abs-y) |(string/cut $ (abs-x)))))
 
 (defn backspace-back-to-prev-line []
-  (let [current-line (get-in editor-state [:erows (abs-y)] )]
+  (let [current-line (get-in editor-state [:erows (abs-y)])
+        leaving-y (abs-y)]
     (move-cursor :up)
     (move-cursor :end) 
     # drop line being left
     (update editor-state :erows 
-            |(array/remove $ (abs-y)))
+            |(array/remove $ leaving-y))
     # append current-line to new line
-    (update-erow (dec (abs-y)) |(string $ current-line))))
+    (update-erow (abs-y) | (string $ current-line))))
 
 (defn delete-next-line-up []
   (unless (= (abs-y) (safe-len (editor-state :erows)))
@@ -367,6 +365,9 @@
       (update-erow (abs-y) |(string $ next-line))
       (update editor-state :erows 
               |(array/remove $ (inc (abs-y)))))))
+
+# Declaring out of order to allow type checking to pass
+(varfn save-file [])
 
 (defn editor-process-keypress []
   (let [key (read-key) #Blocks waiting on keystroke
@@ -377,6 +378,7 @@
     (case key
       (ctrl-key (chr "q")) (set quit true)
       (ctrl-key (chr "n")) (toggle-line-numbers)
+      (ctrl-key (chr "s")) (save-file)
 
       # PageUp and PageDown
       # If on home page of file
@@ -399,7 +401,7 @@
 
       # Right Arrow
       # If cursor at end of current line, accounting for horizontal scrolling
-      1001 (do (if (= cx (rowlen (abs-y)))
+      1001 (do (if (= (abs-x) (rowlen (abs-y)))
                  (wrap-to-start-of-next-line)
                  (move-cursor :right))
                (set (editor-state :rememberx) 0))
@@ -413,7 +415,7 @@
 
       # Down Arrow
       1003 (do (move-cursor-with-mem :down)
-               (update-x-memory cx))
+                (update-x-memory cx))
       
       # TODO: Enter
 
@@ -424,7 +426,7 @@
             # On top line and home row of file; do nothing
             (and (= (abs-x) 0) (= (abs-y) 0)) (break)
             # Cursor below last file line; cursor up
-            (> (abs-x) (safe-len (editor-state :erows))) (move-cursor :up)
+            (> (abs-y) (dec (safe-len (editor-state :erows)))) (move-cursor :up)
             # Cursor at margin and viewport far left
             (= (abs-x) 0) (backspace-back-to-prev-line)
             # Otherwise
@@ -434,7 +436,7 @@
       1008 (cond 
              # On last line and end of row of file; do nothing
              (and (= (abs-x) (rowlen (abs-y)))
-                  (= (abs-y) (length (editor-state :erows)))) (break)
+                  (= (abs-y) (dec (safe-len (editor-state :erows))))) (break)
              # Cursor at end of current line
              (= cx (- (rowlen cy) h-offset)) (delete-next-line-up) 
              # Cursor below last file line; cursor up
@@ -450,13 +452,15 @@
 # File i/o
 
 (defn load-file [filename]
-  (let [erows (string/split "\n" (slurp filename))]
+  (let [erows (string/split "\n" (try (slurp filename) 
+                                      ([e f] (spit filename "")
+                                             (slurp filename))))]
     (set (editor-state :filename) filename)
     (set (editor-state :erows) erows)))
 
-(defn save-file [filename]
-  # TODO
-  )
+(varfn save-file [] 
+  (spit (editor-state :filename) (string/join (editor-state :erows) "\n"))
+  (send-status-msg (string "File saved!")))
 
 (defn editor-open [args]
   (when-let [file (first (drop 1 args))]
