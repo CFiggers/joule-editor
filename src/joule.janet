@@ -213,16 +213,17 @@
   (if (deep= @[] (flatten (editor-state :erows)))
     (let [r (editor-state :screenrows)
           c (editor-state :screencols)
-          message-start-rows (- (math/trunc (/ r 2))
+          message-start-row (- (math/trunc (/ r 2))
                                (math/trunc (/ (safe-len messages) 2)))
-          message-cols (map |(- (math/trunc (/ c 2))
-                         (math/trunc (/ (safe-len $) 2))) messages)
-          pads (map |(string/repeat " " (- $ (if (editor-state :linenumbers) 4 2)))
-                    (message-cols))]
-      (map (fn [i] (update rows (message-start-rows i) 
-                           |(string $ (pads i) 
-                                    (messages i)))) 
-           (range (safe-len rows))))
+          message-cols (map | (- (math/trunc (/ c 2))
+                                 (math/trunc (/ (safe-len $) 2))) messages)
+          pads (map | (string/repeat " " (- $ (if (editor-state :linenumbers) 4 2)))
+                    message-cols)]
+      (each i (range (safe-len messages))
+            (update rows (+ message-start-row i)
+                    | (string $ (pads i)
+                              (messages i))))
+      rows)
     rows))
 
 (defn trim-to-width [rows]
@@ -236,9 +237,9 @@
     (map |(string/replace-all "\t" spaces $) rows)))
 
 (defn slice-rows [rows]
-  (let [start (min (safe-len (editor-state :erows))
+  (let [start (min (safe-len rows)
                    (editor-state :rowoffset))
-        end (min (safe-len (editor-state :erows))
+        end (min (safe-len rows)
                  (+ (editor-state :rowoffset)
                     (editor-state :screenrows)))]
     (array/slice rows start end)))
@@ -281,7 +282,7 @@
       :off rows)))
 
 (defn fill-empty-rows [rows]
-  (let [r (range (editor-state :screencols))
+  (let [r (range (editor-state :screenrows))
         fill (map (fn [_] (string "\e[0;34m" "~" "\e[0m")) r)] 
     (fuse-over rows fill)))
 
@@ -339,18 +340,38 @@
 
 ### Input ###
 
+(defn handle-out-of-bounds []
+  #If erows is empty, insert an empty string
+  (when (= 0 (safe-len (editor-state :erows)))
+    (array/push (editor-state :erows) ""))
+  #If cursor lower than last erow, move up to last erow
+  (when (> (inc (abs-y)) (safe-len (editor-state :erows)))
+    #Move viewport
+    (when (> (editor-state :rowoffset) (safe-len (editor-state :erows)))
+      (set (editor-state :rowoffset)
+           (max 0 (- (safe-len (editor-state :erows))
+                     (math/trunc (/ (editor-state :screenrows) 2))))))
+    #Move cursor
+    (set (editor-state :cy)
+         (dec (- (safe-len (editor-state :erows))
+                 (editor-state :rowoffset))))
+    (set (editor-state :cx)
+         (max-x (abs-y)))))
+
 (defn editor-handle-typing [key]
-  (unless (> (abs-y) (safe-len (editor-state :erows)))
-          (let [char (string/format "%c" key)]
-            (update-erow (abs-y) | (string/insert $ (abs-x) char))
-            (move-cursor :right))))
+  (handle-out-of-bounds)
+  (let [char (string/format "%c" key)]
+    (update-erow (abs-y) | (string/insert $ (abs-x) char))
+    (move-cursor :right)))
 
 (defn carriage-return []
-  (let [last-line (string/slice ((editor-state :erows) (abs-y))  0 (abs-x)) 
-        next-line (string/slice ((editor-state :erows) (abs-y))  (abs-x)) ]
+  (handle-out-of-bounds)
+  (let [last-line (string/slice ((editor-state :erows) (abs-y))  (abs-x))
+        next-line (string/slice ((editor-state :erows) (abs-y))  0 (abs-x)) ]
     (update-erow (abs-y)  (fn [_] last-line))
     (update editor-state :erows
-      |(array/insert $ (abs-y) next-line))))
+      |(array/insert $ (abs-y) next-line))
+    (wrap-to-start-of-next-line)))
 
 (defn delete-char [direction]
   (case direction
@@ -428,6 +449,8 @@
                 (update-x-memory cx))
       
       # TODO: Enter
+      10 (carriage-return)
+      13 (carriage-return)
 
       # Escape
 
