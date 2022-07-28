@@ -320,10 +320,12 @@
         filenamef (string "\e[1;4m" filename "\e[m")
         statusmsg (if (< (- (os/time) (editor-state :statusmsgtime)) 5)
                     (editor-state :statusmsg) "")
-        modalmsg (if (= statusmsg "") (string (editor-state :modalmsg) " > ") "")
+        modalmsg (cond (not (= statusmsg "")) ""
+                       (= (editor-state :modalmsg) "") ""
+                       (string (editor-state :modalmsg) " > "))
         modalinput (editor-state :modalinput)]
     (array/push rows (string leftpad filenamef midpad cursor-pos))
-    (array/push rows (string leftpad statusmsg modalmsg ))))
+    (array/push rows (string leftpad statusmsg modalmsg modalinput))))
 
 (defn join-rows [rows]
   (as-> (string/join rows (string (esc "K") "\r\n")) m
@@ -344,9 +346,9 @@
 (comment 
   (safe-len (editor-update-rows)))
 
-(defn editor-refresh-screen []
+(defn editor-refresh-screen [& opts]
   (update-screen-sizes)
-  (editor-scroll)
+  (unless (index-of :modal opts) (editor-scroll))
   (var abuf @"")
 
   (buffer/push-string abuf (esc "?25l"))
@@ -392,8 +394,8 @@
 
 (defn carriage-return []
   (handle-out-of-bounds)
-  (let [last-line (string/slice ((editor-state :erows) (abs-y))  (abs-x))
-        next-line (string/slice ((editor-state :erows) (abs-y))  0 (abs-x)) ]
+  (let [last-line (string/slice ((editor-state :erows) (abs-y)) (abs-x))
+        next-line (string/slice ((editor-state :erows) (abs-y)) 0 (abs-x))]
     (update-erow (abs-y)  (fn [_] last-line))
     (update editor-state :erows
       |(array/insert $ (abs-y) next-line))
@@ -426,6 +428,7 @@
 # Declaring out of order to allow type checking to pass
 (varfn save-file [])
 (varfn load-file-modal [])
+(varfn close-file [])
 
 (defn editor-process-keypress []
   (let [key (read-key) #Blocks here waiting on keystroke
@@ -438,6 +441,7 @@
       (ctrl-key (chr "n")) (toggle-line-numbers)
       (ctrl-key (chr "l")) (load-file-modal)
       (ctrl-key (chr "s")) (save-file)
+      (ctrl-key (chr "w")) (close-file)
 
       # If on home page of file
       :pageup (if (= 0 v-offset) 
@@ -513,28 +517,42 @@
 (var modal-cancel false)
 
 (defn delete-char-modal [direction]
-  (let [mx (- (abs-x) (get-margin) (safe-len (editor-state :modalmsg)) 3)])
-  (case direction
-    :last (do (update-minput |(string/cut $ (dec mx)))
-              (move-cursor :left))
-    :current (update-minput |(string/cut $ mx))))
+  (let [mx (- (abs-x) (safe-len (editor-state :modalmsg)) 3)]
+    (case direction
+      :last (do (update-minput | (string/cut $ (dec mx)))
+                (move-cursor :left))
+      :current (update-minput | (string/cut $ mx)))))
+
+(defn modal-home []
+  (+ (safe-len (editor-state :modalmsg)) 3))
 
 (defn move-cursor-modal [direction]
-  (let [modal-home (+ (get-margin) (safe-len (editor-state :modalmsg)) 3)]
-    (case direction
-      :home (set (editor-state :cx) modal-home)
-      :end (set (editor-state :cx) (+ modal-home (editor-state :modalinput))))))
+  (case direction
+    :home (set (editor-state :cx) modal-home)
+    :end (set (editor-state :cx) (+ modal-home (editor-state :modalinput)))))
 
 (defn modal-handle-typing [key]
-  )
+  (let [char (string/format "%c" key)
+        mx (- (editor-state :cx) (modal-home))]
+    (update-minput |(string/insert $ mx char))
+    (move-cursor :right)))
 
 (defn modal-process-keypress [kind] 
   (let [key (read-key)]
     (case (get keymap key key)
+      (ctrl-key (chr "q")) (set modal-cancel true)
+      (ctrl-key (chr "n")) (break) 
+      (ctrl-key (chr "l")) (break) 
+      (ctrl-key (chr "s")) (break) 
+      (ctrl-key (chr "w")) (break) 
+      
       :enter (set modal-active false)
 
       :backspace (delete-char-modal :last)
       :del (delete-char-modal :current)
+
+      :pageup (move-cursor-modal :home)
+      :pagedown (move-cursor-modal :end)
 
       :uparrow (move-cursor :left)
       :downarrow (move-cursor :right)
@@ -552,24 +570,31 @@
 
       :esc (set modal-cancel true)
       
-      )))
-
+      (modal-handle-typing key))))
 
 (defn modal [message kind callback]
-  #Init modal-related state
-  (set (editor-state :modalmsg) message)
-  (set (editor-state :cx) (+ (get-margin) (safe-len message) 3))
-  (set (editor-state :cy) (editor-state :screenrows))
+  (let [ret-x (editor-state :cx)
+        ret-y (editor-state :cy)]
+    
+    # Init modal-related state
+    (set (editor-state :modalmsg) message)
+    (set (editor-state :cx) (+ (safe-len (editor-state :modalmsg)) 3))
+    (set (editor-state :cy) (+ (editor-state :screenrows) 2))
 
-  (set (modal-active true))
-  (while (and modal-active (not modal-cancel))
-    (editor-refresh-screen)
-    (modal-process-keypress kind))
-  
-  (unless modal-cancel (callback))
-  
-  #Clean up modal-related state
-  (set (editor-state :modalmsg) ""))
+    (set modal-active true)
+    (set modal-cancel false)
+    (while (and modal-active (not modal-cancel))
+      (editor-refresh-screen :modal)
+      (modal-process-keypress kind))
+
+    (unless modal-cancel (callback))
+
+    # Clean up modal-related state
+
+    (set (editor-state :modalmsg) "")
+    (set (editor-state :modalinput) "")
+    (set (editor-state :cx) ret-x)
+    (set (editor-state :cy) ret-y)))
 
 ### File I/O ###
 
@@ -585,7 +610,10 @@
   (send-status-msg (string "File saved!")))
 
 (varfn load-file-modal []
-  )
+  (modal "Load what file?" :input |(load-file (editor-state :modalinput))) 
+  (if modal-cancel
+    (send-status-msg "Cancelled.")
+    (send-status-msg (string "Loaded file: " (editor-state :filename)))))
 
 (defn editor-open [args]
   (when-let [file (first (drop 1 args))]
@@ -595,6 +623,29 @@
 # Init and main
 
 # TODO: Implement user config dotfile
+
+(varfn close-file []
+  (set editor-state 
+       @{:cx 0
+       :cy 0
+       :rememberx 0
+       :rowoffset 0
+       :coloffset 0
+       :erows @[]
+       :linenumbers true
+       :leftmargin 3
+       :filename ""
+       :statusmsg ""
+       :statusmsgtime 0
+       :modalmsg ""
+       :modalinput ""
+       :screenrows (- ((get-window-size) :rows) 2)
+       :screencols ((get-window-size) :cols)
+       :userconfig @{:scrollpadding 5
+                     :tabsize 4
+                     :indentwith :spaces
+                     :numtype :on}})
+  (send-status-msg "File closed."))
 
 (defn load-config [] 
   )
