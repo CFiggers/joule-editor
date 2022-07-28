@@ -5,6 +5,24 @@
 (def version
   "0.0.1")
 
+(def keymap
+  {13 :enter
+   27 :esc
+   127 :backspace
+   1000 :leftarrow
+   1001 :rightarrow
+   1002 :uparrow
+   1003 :downarrow
+   1004 :pageup
+   1005 :pagedown
+   1006 :home
+   1007 :end
+   1008 :del
+   1009 :ctrlleftarrow
+   1010 :ctrlrightarrow
+   1011 :ctrluparrow
+   1012 :ctrldownarrow})
+
 ### Data ###
 
 (var quit false)
@@ -410,12 +428,12 @@
 (varfn load-file-modal [])
 
 (defn editor-process-keypress []
-  (let [key (read-key) #Blocks waiting on keystroke
+  (let [key (read-key) #Blocks here waiting on keystroke
         cx (editor-state :cx)
         cy (editor-state :cy)
         v-offset (editor-state :rowoffset)
         h-offset (editor-state :coloffset)]
-    (case key
+    (case (get keymap key key)
       (ctrl-key (chr "q")) (set quit true)
       (ctrl-key (chr "n")) (toggle-line-numbers)
       (ctrl-key (chr "l")) (load-file-modal)
@@ -423,60 +441,65 @@
 
       # PageUp and PageDown
       # If on home page of file
-      1004 (if (= 0 v-offset) 
+      :pageup (if (= 0 v-offset) 
              (do (move-cursor :home)
                  (set (editor-state :cy) 0))
              (move-viewport :pageup))
-      1005 (move-viewport :pagedown)
+      :pagedown (move-viewport :pagedown)
 
       # Home and End
-      1006 (move-cursor :home)
-      1007 (move-cursor :end)
+      :home (move-cursor :home)
+      :end (move-cursor :end)
 
       # Left Arrow
       # If cursor at margin and viewport at far left
-      1000 (do (if (= (abs-x) 0)
+      :leftarrow (do (if (= (abs-x) 0)
                  (wrap-to-end-of-prev-line)
                  (move-cursor :left))
                (set (editor-state :rememberx) 0))
 
       # Right Arrow
       # If cursor at end of current line, accounting for horizontal scrolling
-      1001 (do (if (= (abs-x) (rowlen (abs-y)))
+      :rightarrow (do (if (= (abs-x) (rowlen (abs-y)))
                  (wrap-to-start-of-next-line)
                  (move-cursor :right))
                (set (editor-state :rememberx) 0))
 
       # Up Arrow
       # If on top row of file
-      1002 (do (if (= (abs-y) 0)
+      :uparrow (do (if (= (abs-y) 0)
                  (move-cursor :home)
                  (move-cursor-with-mem :up)) 
                (update-x-memory cx))
 
       # Down Arrow
-      1003 (do (move-cursor-with-mem :down)
+      :downarrow (do (move-cursor-with-mem :down)
                 (update-x-memory cx))
       
+      # TODO: Ctrl + arrows
+      :ctrlleftarrow (break)
+      :ctrlrightarrow (break)
+      :ctrluparrow (break)
+      :ctrldownarrow (break)
+      
       # Enter
-      10 (carriage-return)
-      13 (carriage-return)
+      :enter (carriage-return)
 
-      # Escape
+      # TODO: Escape
 
       # Backspace
-      127 (cond 
-            # On top line and home row of file; do nothing
-            (and (= (abs-x) 0) (= (abs-y) 0)) (break)
-            # Cursor below last file line; cursor up
-            (> (abs-y) (dec (safe-len (editor-state :erows)))) (move-cursor :up)
-            # Cursor at margin and viewport far left
-            (= (abs-x) 0) (backspace-back-to-prev-line)
-            # Otherwise
-            (delete-char :last))
+      :backspace (cond
+                   #On top line and home row of file; do nothing
+                   (and (= (abs-x) 0) (= (abs-y) 0)) (break)
+                   #Cursor below last file line; cursor up
+                   (> (abs-y) (dec (safe-len (editor-state :erows)))) (move-cursor :up)
+                   #Cursor at margin and viewport far left
+                   (= (abs-x) 0) (backspace-back-to-prev-line)
+                   #Otherwise
+                   (delete-char :last))
 
       # Delete
-      1008 (cond 
+      :del (cond 
              # On last line and end of row of file; do nothing
              (and (= (abs-x) (rowlen (abs-y)))
                   (= (abs-y) (dec (safe-len (editor-state :erows))))) (break)
