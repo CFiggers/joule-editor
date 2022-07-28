@@ -439,7 +439,6 @@
       (ctrl-key (chr "l")) (load-file-modal)
       (ctrl-key (chr "s")) (save-file)
 
-      # PageUp and PageDown
       # If on home page of file
       :pageup (if (= 0 v-offset) 
              (do (move-cursor :home)
@@ -447,32 +446,27 @@
              (move-viewport :pageup))
       :pagedown (move-viewport :pagedown)
 
-      # Home and End
       :home (move-cursor :home)
       :end (move-cursor :end)
 
-      # Left Arrow
       # If cursor at margin and viewport at far left
       :leftarrow (do (if (= (abs-x) 0)
                  (wrap-to-end-of-prev-line)
                  (move-cursor :left))
                (set (editor-state :rememberx) 0))
 
-      # Right Arrow
       # If cursor at end of current line, accounting for horizontal scrolling
       :rightarrow (do (if (= (abs-x) (rowlen (abs-y)))
                  (wrap-to-start-of-next-line)
                  (move-cursor :right))
                (set (editor-state :rememberx) 0))
 
-      # Up Arrow
       # If on top row of file
       :uparrow (do (if (= (abs-y) 0)
                  (move-cursor :home)
                  (move-cursor-with-mem :up)) 
                (update-x-memory cx))
 
-      # Down Arrow
       :downarrow (do (move-cursor-with-mem :down)
                 (update-x-memory cx))
       
@@ -482,12 +476,10 @@
       :ctrluparrow (break)
       :ctrldownarrow (break)
       
-      # Enter
       :enter (carriage-return)
 
       # TODO: Escape
 
-      # Backspace
       :backspace (cond
                    #On top line and home row of file; do nothing
                    (and (= (abs-x) 0) (= (abs-y) 0)) (break)
@@ -498,7 +490,6 @@
                    #Otherwise
                    (delete-char :last))
 
-      # Delete
       :del (cond 
              # On last line and end of row of file; do nothing
              (and (= (abs-x) (rowlen (abs-y)))
@@ -519,6 +510,8 @@
 
 (var modal-active false)
 
+(var modal-cancel false)
+
 (defn delete-char-modal [direction]
   (let [mx (- (abs-x) (get-margin) (safe-len (editor-state :modalmsg)) 3)])
   (case direction
@@ -532,49 +525,51 @@
       :home (set (editor-state :cx) modal-home)
       :end (set (editor-state :cx) (+ modal-home (editor-state :modalinput))))))
 
+(defn modal-handle-typing [key]
+  )
+
 (defn modal-process-keypress [kind] 
   (let [key (read-key)]
-    (case key
-      #Enter 
-      10 (set modal-active false)
-      13 (set modal-active false)
+    (case (get keymap key key)
+      :enter (set modal-active false)
 
-      # Backspace 
-      127 (delete-char-modal :last)
+      :backspace (delete-char-modal :last)
+      :del (delete-char-modal :current)
 
-      # Delete
-      1008 (delete-char-modal :current)
+      :uparrow (move-cursor :left)
+      :downarrow (move-cursor :right)
+      :leftarrow (move-cursor :left)
+      :rightarrow (move-cursor :right)
 
-      # Up and Down Arrows
-      1002 (move-cursor :left)
-      1003 (move-cursor :right)
+      # TODO: Implement these
+      :ctrluparrow (break)
+      :ctrldownarrow (break)
+      :ctrlleftarrow (break)
+      :ctrlrightarrow (break)
+
+      :home (move-cursor-modal :home)
+      :end (move-cursor-modal :end)
+
+      :esc (set modal-cancel true)
       
-      # Left Arrow 
-      1000 (move-cursor :left)
-
-      # Right Arrow
-      1001 (move-cursor :right)
-
-      # Home and End
-      1006 (move-cursor-modal :home)
-      1007 (move-cursor-modal :end)
-
-      # Esc 
-      
-
-
       )))
 
+
 (defn modal [message kind callback]
-  (var modal-cancel false)
+  #Init modal-related state
   (set (editor-state :modalmsg) message)
   (set (editor-state :cx) (+ (get-margin) (safe-len message) 3))
   (set (editor-state :cy) (editor-state :screenrows))
+
   (set (modal-active true))
   (while (and modal-active (not modal-cancel))
     (editor-refresh-screen)
     (modal-process-keypress kind))
-  (callback))
+  
+  (unless modal-cancel (callback))
+  
+  #Clean up modal-related state
+  (set (editor-state :modalmsg) ""))
 
 ### File I/O ###
 
