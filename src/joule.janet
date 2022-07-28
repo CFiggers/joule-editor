@@ -6,7 +6,8 @@
   "0.0.1")
 
 (def keymap
-  {13 :enter
+  {9 :tab
+   13 :enter
    27 :esc
    127 :backspace
    1000 :leftarrow
@@ -29,26 +30,30 @@
 
 # TODO: Implement multiple "tabs"/buffers open simultaneously
 
-(var editor-state
-     @{:cx 0
-       :cy 0
-       :rememberx 0
-       :rowoffset 0
-       :coloffset 0
-       :erows @[]
-       :linenumbers true
-       :leftmargin 3
-       :filename ""
-       :statusmsg ""
-       :statusmsgtime 0
-       :modalmsg ""
-       :modalinput ""
-       :screenrows (- ((get-window-size) :rows) 2)
-       :screencols ((get-window-size) :cols)
-       :userconfig @{:scrollpadding 5
-                     :tabsize 4
-                     :indentwith :spaces
-                     :numtype :on}})
+(var editor-state @{})
+
+(defn reset-editor-state []
+     (set editor-state
+          @{:cx 0
+            :cy 0
+            :rememberx 0
+            :rowoffset 0
+            :coloffset 0
+            :erows @[]
+            :dirty 0
+            :linenumbers true
+            :leftmargin 3
+            :filename ""
+            :statusmsg ""
+            :statusmsgtime 0
+            :modalmsg ""
+            :modalinput ""
+            :screenrows (- ((get-window-size) :rows) 2)
+            :screencols ((get-window-size) :cols)
+            :userconfig @{:scrollpadding 5
+                          :tabsize 4
+                          :indentwith :spaces
+                          :numtype :on}}))
 
 ### Utility Functions ###
 
@@ -92,7 +97,8 @@
      (string/slice str (- at (length str))))))
 
 (defn update-erow [row f]
-  (update-in editor-state [:erows row] f))
+  (update-in editor-state [:erows row] f)
+  (update editor-state :dirty inc))
 
 (defn update-minput [f]
   (update editor-state :modalinput f))
@@ -317,7 +323,8 @@
         midpad (string/repeat " " (- (editor-state :screencols)
                                   ;(map safe-len [filename cursor-pos leftpad])
                                      2))
-        filenamef (string "\e[1;4m" filename "\e[m")
+        filenamef (string "\e[1;4m" filename "\e[m"
+                          (if (> (editor-state :dirty) 0) "*" ""))
         statusmsg (if (< (- (os/time) (editor-state :statusmsgtime)) 5)
                     (editor-state :statusmsg) "")
         modalmsg (cond (not (= statusmsg "")) ""
@@ -453,6 +460,9 @@
       :home (move-cursor :home)
       :end (move-cursor :end)
 
+      # TODO: Implement smarter tab stops
+      :tab (repeat 4 (editor-handle-typing 32))
+
       # If cursor at margin and viewport at far left
       :leftarrow (do (if (= (abs-x) 0)
                  (wrap-to-end-of-prev-line)
@@ -554,6 +564,9 @@
       :pageup (move-cursor-modal :home)
       :pagedown (move-cursor-modal :end)
 
+      # TODO: Implement autocompletion
+      :tab (break)
+
       :uparrow (move-cursor :left)
       :downarrow (move-cursor :right)
       :leftarrow (move-cursor :left)
@@ -605,9 +618,14 @@
     (set (editor-state :filename) filename)
     (set (editor-state :erows) erows)))
 
+(defn ask-filename-modal []
+  (modal "Filename?" :input |(set (editor-state :filename) (editor-state :modalinput))))
+
 (varfn save-file [] 
+  (when (= "" (editor-state :filename)) (ask-filename-modal)) 
   (spit (editor-state :filename) (string/join (editor-state :erows) "\n"))
-  (send-status-msg (string "File saved!")))
+  (set (editor-state :dirty) 0)
+       (send-status-msg (string "File saved!")))
 
 (varfn load-file-modal []
   (modal "Load what file?" :input |(load-file (editor-state :modalinput))) 
@@ -625,26 +643,7 @@
 # TODO: Implement user config dotfile
 
 (varfn close-file []
-  (set editor-state 
-       @{:cx 0
-       :cy 0
-       :rememberx 0
-       :rowoffset 0
-       :coloffset 0
-       :erows @[]
-       :linenumbers true
-       :leftmargin 3
-       :filename ""
-       :statusmsg ""
-       :statusmsgtime 0
-       :modalmsg ""
-       :modalinput ""
-       :screenrows (- ((get-window-size) :rows) 2)
-       :screencols ((get-window-size) :cols)
-       :userconfig @{:scrollpadding 5
-                     :tabsize 4
-                     :indentwith :spaces
-                     :numtype :on}})
+  (reset-editor-state)
   (send-status-msg "File closed."))
 
 (defn load-config [] 
@@ -654,6 +653,7 @@
   (when (= (os/which) :linux) 
     (prin "\e[?1049h]"))
   (enable-raw-mode)
+  (reset-editor-state)
   (editor-open args))
 
 (defn exit []
