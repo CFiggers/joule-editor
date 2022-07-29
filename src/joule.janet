@@ -409,10 +409,9 @@
     (wrap-to-start-of-next-line)))
 
 (defn delete-char [direction]
-  (case direction
-    :last (do (update-erow (abs-y) |(string/cut $ (dec (abs-x))))
-                  (move-cursor :left))
-    :current (update-erow (abs-y) |(string/cut $ (abs-x)))))
+  (when (= direction :backspace)
+    (move-cursor :left))
+  (update-erow (abs-y) | (string/cut $ (abs-x))))
 
 (defn backspace-back-to-prev-line []
   (let [current-line (get-in editor-state [:erows (abs-y)])
@@ -433,6 +432,7 @@
               |(array/remove $ (inc (abs-y)))))))
 
 # Declaring out of order to allow type checking to pass
+(varfn exit-editor [])
 (varfn save-file [])
 (varfn load-file-modal [])
 (varfn close-file [])
@@ -444,7 +444,7 @@
         v-offset (editor-state :rowoffset)
         h-offset (editor-state :coloffset)]
     (case (get keymap key key)
-      (ctrl-key (chr "q")) (set quit true)
+      (ctrl-key (chr "q")) (exit-editor)
       (ctrl-key (chr "n")) (toggle-line-numbers)
       (ctrl-key (chr "l")) (load-file-modal)
       (ctrl-key (chr "s")) (save-file)
@@ -502,7 +502,7 @@
                    #Cursor at margin and viewport far left
                    (= (abs-x) 0) (backspace-back-to-prev-line)
                    #Otherwise
-                   (delete-char :last))
+                   (delete-char :backspace))
 
       :del (cond 
              # On last line and end of row of file; do nothing
@@ -511,9 +511,9 @@
              # Cursor at end of current line
              (= cx (- (rowlen cy) h-offset)) (delete-next-line-up) 
              # Cursor below last file line; cursor up
-             (> (abs-x) (safe-len (editor-state :erows))) (break)
+             (> (abs-y) (safe-len (editor-state :erows))) (break)
              # Otherwise
-             (delete-char :current))
+             (delete-char :delete))
 
       # TODO: Function row
 
@@ -528,10 +528,9 @@
 
 (defn delete-char-modal [direction]
   (let [mx (- (abs-x) (safe-len (editor-state :modalmsg)) 3)]
-    (case direction
-      :last (do (update-minput | (string/cut $ (dec mx)))
-                (move-cursor :left))
-      :current (update-minput | (string/cut $ mx)))))
+    (when (= direction :backspace)
+      (move-cursor :left))
+    (update-minput | (string/cut $ mx))))
 
 (defn modal-home []
   (+ (safe-len (editor-state :modalmsg)) 3))
@@ -558,8 +557,8 @@
       
       :enter (set modal-active false)
 
-      :backspace (delete-char-modal :last)
-      :del (delete-char-modal :current)
+      :backspace (delete-char-modal :backspace)
+      :del (delete-char-modal :delete)
 
       :pageup (move-cursor-modal :home)
       :pagedown (move-cursor-modal :end)
@@ -585,11 +584,13 @@
       
       (modal-handle-typing key))))
 
-(defn modal [message kind callback]
+(defn modal [message kind callback &opt modalinput]
   (let [ret-x (editor-state :cx)
         ret-y (editor-state :cy)]
     
     # Init modal-related state
+    (set (editor-state :statusmsg) "")
+    (set (editor-state :modalinput) "")
     (set (editor-state :modalmsg) message)
     (set (editor-state :cx) (+ (safe-len (editor-state :modalmsg)) 3))
     (set (editor-state :cy) (+ (editor-state :screenrows) 2))
@@ -605,7 +606,7 @@
     # Clean up modal-related state
 
     (set (editor-state :modalmsg) "")
-    (set (editor-state :modalinput) "")
+    (set (editor-state :modalinput) (or modalinput ""))
     (set (editor-state :cx) ret-x)
     (set (editor-state :cy) ret-y)))
 
@@ -625,7 +626,8 @@
   (when (= "" (editor-state :filename)) (ask-filename-modal)) 
   (spit (editor-state :filename) (string/join (editor-state :erows) "\n"))
   (set (editor-state :dirty) 0)
-       (send-status-msg (string "File saved!")))
+       (send-status-msg (string "File saved!"))
+  true)
 
 (varfn load-file-modal []
   (modal "Load what file?" :input |(load-file (editor-state :modalinput))) 
@@ -642,9 +644,40 @@
 
 # TODO: Implement user config dotfile
 
+(varfn exit-editor []
+  (if (< 0 (editor-state :dirty))
+    (modal "Are you sure? Unsaved changes will be lost. (yes/No/save)"
+           :input
+           | (do (case (string/ascii-lower (editor-state :modalinput)) 
+                   "yes" (set quit true)
+                   "n" (send-status-msg "Tip: Ctrl + s to Save.")
+                   "no" (send-status-msg "Tip: Ctrl + s to Save.")
+                   "s" (if (save-file)
+                            (set quit true)
+                            (send-status-msg "Tip: Ctrl + s to Save."))
+                   "save" (if (save-file)
+                            (set quit true)
+                            (send-status-msg "Tip: Ctrl + s to Save."))
+                   (send-status-msg "Tip: Ctrl + s to Save."))))
+    (set quit true)))
+
 (varfn close-file []
-  (reset-editor-state)
-  (send-status-msg "File closed."))
+  (if (< 0 (editor-state :dirty))
+    (modal "Are you sure? Unsaved changes will be lost. (yes/No/save)"
+           :input
+           | (do (case (string/ascii-lower (editor-state :modalinput)) 
+                   "yes" (set quit true)
+                   "n" (send-status-msg "Tip: Ctrl + s to Save.")
+                   "no" (send-status-msg "Tip: Ctrl + s to Save.")
+                   "s" (if (save-file)
+                            (set quit true)
+                            (send-status-msg "Tip: Ctrl + s to Save."))
+                   "save" (if (save-file)
+                            (set quit true)
+                            (send-status-msg "Tip: Ctrl + s to Save."))
+                   (send-status-msg "Tip: Ctrl + s to Save."))))
+    (do (reset-editor-state)
+      (send-status-msg "File closed."))))
 
 (defn load-config [] 
   )
