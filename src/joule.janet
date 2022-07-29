@@ -96,18 +96,30 @@
      (string/slice str 0 at)
      (string/slice str (- at (length str))))))
 
+(defn edset [& key-v]
+  (assert (= 0 (% (safe-len key-v) 2)))
+  (let [key-vs (partition 2 key-v)]
+    (each [key val] key-vs 
+          (set (editor-state key) val))))
+
+(defn edup [& key-v]
+  (assert (= 0 (% (safe-len key-v) 2)))
+  (let [key-vs (partition 2 key-v)]
+    (each [key val] key-vs 
+          (update editor-state key val))))
+
 (defn update-erow [row f]
   (update-in editor-state [:erows row] f)
-  (update editor-state :dirty inc))
+  (edup :dirty inc))
 
 (defn update-minput [f]
-  (update editor-state :modalinput f))
+  (edup :modalinput f))
 
 ### Editor State Functions ###
 
 (defn send-status-msg [msg]
-  (set (editor-state :statusmsg) msg)
-  (set (editor-state :statusmsgtime) (os/time)))
+  (edset :statusmsg msg
+         :statusmsgtime (os/time)))
 
 (defn get-margin []
   (if (editor-state :linenumbers)
@@ -124,14 +136,14 @@
          (editor-state :screencols))))
 
 (defn toggle-line-numbers []
-  (update editor-state :linenumbers not))
+  (edup :linenumbers not))
 
 ### Terminal ###
 
 (defn update-screen-sizes []
   (let [sizes (get-window-size)]
-    (set (editor-state :screencols) (sizes :cols))
-    (set (editor-state :screenrows) (- (sizes :rows) 2))))
+    (edset :screencols (sizes :cols)
+           :screenrows (- (sizes :rows) 2))))
 
 ### Movement ###
 
@@ -140,26 +152,26 @@
 
 (defn move-viewport [direction]
   (case direction
-    :up (update editor-state :rowoffset dec)
-    :down (update editor-state :rowoffset inc)
-    :left (update editor-state :coloffset dec)
-    :right (update editor-state :coloffset inc)
+    :up (edup :rowoffset dec)
+    :down (edup :rowoffset inc)
+    :left (edup :coloffset dec)
+    :right (edup :coloffset inc)
     
-    :home (set (editor-state :coloffset) 0)
-    :end (set (editor-state :coloffset)
+    :home (edset :coloffset 0)
+    :end (edset :coloffset
               (+ 10 (- (rowlen (abs-y))
                        (editor-state :screencols))))
     
-    :pageup (set (editor-state :rowoffset)
+    :pageup (edset :rowoffset
                  (max 0 (- (editor-state :rowoffset)
                            (dec (editor-state :screenrows)))))
-    :pagedown (set (editor-state :rowoffset)
+    :pagedown (edset :rowoffset
                    (+ (editor-state :rowoffset)
                       (dec (editor-state :screenrows))))))
 
 (defn move-cursor-home []
   (move-viewport :home)
-  (set (editor-state :cx) 0))
+  (edset :cx 0))
 
 (defn move-cursor-end []
   (let [row-len (rowlen (abs-y))
@@ -167,14 +179,14 @@
     (if (> row-len screen-h)
       (move-viewport :end)
       (move-viewport :home))
-    (set (editor-state :cx) (max-x (abs-y)))))
+    (edset :cx (max-x (abs-y)))))
 
 (defn move-cursor [direction]
   (case direction 
-    :up (update editor-state :cy dec)
-    :down (update editor-state :cy inc)
-    :left (update editor-state :cx dec)
-    :right (update editor-state :cx inc)
+    :up (edup :cy dec)
+    :down (edup :cy inc)
+    :left (edup :cx dec)
+    :right (edup :cx inc)
     :home (move-cursor-home)
     :end (move-cursor-end)))
 
@@ -186,7 +198,7 @@
     (when (< cy 0) 
       (do (when (> (editor-state :rowoffset) 0) 
             (move-viewport :up))
-          (set (editor-state :cy) 0)))
+          (edset :cy 0)))
     
     # Cursor off screen Bottom
     (when (>= cy (editor-state :screenrows))
@@ -197,12 +209,12 @@
     (when (< cx 0)
       (do (when (> (editor-state :coloffset) 0)
             (move-viewport :left))
-          (set (editor-state :cx) 0)))
+          (edset :cx 0)))
     
     # Cursor off screen Right
     (when (>= cx (- (editor-state :screencols) (get-margin)))
       (do (move-viewport :right)
-          (update editor-state :cx dec)))))
+          (edup :cx dec)))))
 
 (defn move-cursor-with-mem [direction]
   (let [currenty (abs-y)
@@ -211,13 +223,12 @@
     # Move cursor to either end of new line (if shorter)
     # or same point on line as x memory (if longer)
     (let [f (case direction :up dec :down inc)]
-      (set (editor-state :cx)
-           (min (max (editor-state :rememberx) cx)
-                (max-x (f currenty)))))))
+      (edset :cx (min (max (editor-state :rememberx) cx)
+                      (max-x (f currenty)))))))
 
 (defn update-x-memory [cx]
   (when (> cx (editor-state :rememberx))
-    (set (editor-state :rememberx) cx)))
+    (edset :rememberx cx)))
 
 (defn wrap-to-end-of-prev-line []
   (move-cursor :up)
@@ -283,13 +294,13 @@
 
 (defn offset-cursor []
   (let [margin (get-margin)]
-    (update editor-state :cx | (+ $ margin))))
+    (edup :cx | (+ $ margin))))
 
 (defn make-row-numbers [n &opt start-n]
   (default start-n 1)
   (let [high-n (+ n start-n)
         margin (max 3 (safe-len (string high-n)))]
-    (set (editor-state :leftmargin) (inc margin))
+    (edset :leftmargin (inc margin))
     (if (editor-state :linenumbers)
       (map | (string/format (string "%" margin "s ") (string $))
            (range start-n high-n))
@@ -384,15 +395,13 @@
   (when (> (inc (abs-y)) (safe-len (editor-state :erows)))
     #Move viewport
     (when (> (editor-state :rowoffset) (safe-len (editor-state :erows)))
-      (set (editor-state :rowoffset)
-           (max 0 (- (safe-len (editor-state :erows))
-                     (math/trunc (/ (editor-state :screenrows) 2))))))
+      (edset :rowoffset (max 0 (- (safe-len (editor-state :erows))
+                                  (math/trunc (/ (editor-state 
+                                                  :screenrows) 2))))))
     #Move cursor
-    (set (editor-state :cy)
-         (dec (- (safe-len (editor-state :erows))
-                 (editor-state :rowoffset))))
-    (set (editor-state :cx)
-         (max-x (abs-y)))))
+    (edset :cy (dec (- (safe-len (editor-state :erows))
+                 (editor-state :rowoffset)))
+           :cx (max-x (abs-y)))))
 
 (defn editor-handle-typing [key]
   (handle-out-of-bounds)
@@ -405,8 +414,7 @@
   (let [last-line (string/slice ((editor-state :erows) (abs-y)) (abs-x))
         next-line (string/slice ((editor-state :erows) (abs-y)) 0 (abs-x))]
     (update-erow (abs-y)  (fn [_] last-line))
-    (update editor-state :erows
-      |(array/insert $ (abs-y) next-line))
+    (edup :erows |(array/insert $ (abs-y) next-line))
     (wrap-to-start-of-next-line)))
 
 (defn delete-char [direction]
@@ -420,8 +428,7 @@
     (move-cursor :up)
     (move-cursor :end) 
     # drop line being left
-    (update editor-state :erows 
-            |(array/remove $ leaving-y))
+    (edup :erows |(array/remove $ leaving-y))
     # append current-line to new line
     (update-erow (abs-y) | (string $ current-line))))
 
@@ -429,8 +436,7 @@
   (unless (= (abs-y) (safe-len (editor-state :erows)))
     (let [next-line (get-in editor-state [:erows (inc (abs-y))])]
       (update-erow (abs-y) |(string $ next-line))
-      (update editor-state :erows 
-              |(array/remove $ (inc (abs-y)))))))
+      (edup :erows |(array/remove $ (inc (abs-y)))))))
 
 # Declaring out of order to allow type checking to pass
 (varfn exit-editor [])
@@ -456,7 +462,7 @@
       # If on home page of file
       :pageup (if (= 0 v-offset) 
              (do (move-cursor :home)
-                 (set (editor-state :cy) 0))
+                 (edset :cy 0))
              (move-viewport :pageup))
       :pagedown (move-viewport :pagedown)
 
@@ -470,13 +476,13 @@
       :leftarrow (do (if (= (abs-x) 0)
                  (wrap-to-end-of-prev-line)
                  (move-cursor :left))
-               (set (editor-state :rememberx) 0))
+               (edset :rememberx 0))
 
       # If cursor at end of current line, accounting for horizontal scrolling
       :rightarrow (do (if (= (abs-x) (rowlen (abs-y)))
                  (wrap-to-start-of-next-line)
                  (move-cursor :right))
-               (set (editor-state :rememberx) 0))
+               (edset :rememberx 0))
 
       # If on top row of file
       :uparrow (do (if (= (abs-y) 0)
@@ -540,9 +546,9 @@
 
 (defn move-cursor-modal [direction]
   (case direction
-    :home (set (editor-state :cx) (modal-home))
-    :end (set (editor-state :cx) (+ (modal-home) 
-                                    (safe-len (editor-state :modalinput))))))
+    :home (edset :cx (modal-home))
+    :end (edset :cx (+ (modal-home)
+                       (safe-len (editor-state :modalinput))))))
 
 (defn modal-handle-typing [key]
   (let [char (string/format "%c" key)
@@ -604,16 +610,16 @@
       
       (modal-handle-typing key))))
 
-(defn modal [message kind callback &opt modalinput]
+(defn modal [message kind callback &opt modalendput]
   (let [ret-x (editor-state :cx)
         ret-y (editor-state :cy)]
     
     # Init modal-related state
-    (set (editor-state :statusmsg) "")
-    (set (editor-state :modalinput) "")
-    (set (editor-state :modalmsg) message)
-    (set (editor-state :cx) (+ (safe-len (editor-state :modalmsg)) 3))
-    (set (editor-state :cy) (+ (editor-state :screenrows) 2))
+    (edset :statusmsg ""
+           :modalinput ""
+           :modalmsg message)
+    (edset :cx (modal-home)
+           :cy (+ (editor-state :screenrows) 2))
 
     (set modal-active true)
     (set modal-cancel false)
@@ -625,10 +631,10 @@
 
     # Clean up modal-related state
 
-    (set (editor-state :modalmsg) "")
-    (set (editor-state :modalinput) (or modalinput ""))
-    (set (editor-state :cx) ret-x)
-    (set (editor-state :cy) ret-y)))
+    (edset :modalmsg ""
+           :modalinput (or modalendput "")
+           :cx ret-x
+           :cy ret-y)))
 
 ### File I/O ###
 
@@ -636,24 +642,24 @@
   (let [erows (string/split "\n" (try (slurp filename) 
                                       ([e f] (spit filename "")
                                              (slurp filename))))]
-    (set (editor-state :filename) filename)
-    (set (editor-state :erows) erows)))
+    (edset :filename filename
+           :erows erows)))
 
 (defn ask-filename-modal []
-  (modal "Filename?" :input |(set (editor-state :filename) (editor-state :modalinput))))
+  (modal "Filename?" :input |(edset :filename (editor-state :modalinput))))
 
 (varfn save-file [] 
   (when (= "" (editor-state :filename)) (ask-filename-modal)) 
   (spit (editor-state :filename) (string/join (editor-state :erows) "\n"))
-  (set (editor-state :dirty) 0)
-       (send-status-msg (string "File saved!"))
+  (edset :dirty 0) 
+  (send-status-msg (string "File saved!"))
   true)
 
 (varfn save-file-as [] 
    (ask-filename-modal)
    (unless modal-cancel
            (spit (editor-state :filename) (string/join (editor-state :erows) "\n"))
-           (set (editor-state :dirty) 0)
+           (edset :dirty 0)
            (send-status-msg (string "File saved!"))))
 
 (varfn load-file-modal []
@@ -671,38 +677,31 @@
 
 # TODO: Implement user config dotfile
 
+(defn confirm-close []
+  (do (case (string/ascii-lower (editor-state :modalinput))
+        "yes" (set quit true)
+        "n" (send-status-msg "Tip: Ctrl + s to Save.")
+        "no" (send-status-msg "Tip: Ctrl + s to Save.")
+        "s" (if (save-file)
+              (set quit true)
+              (send-status-msg "Tip: Ctrl + s to Save."))
+        "save" (if (save-file)
+                 (set quit true)
+                 (send-status-msg "Tip: Ctrl + s to Save."))
+        (send-status-msg "Tip: Ctrl + s to Save."))))
+
 (varfn exit-editor []
   (if (< 0 (editor-state :dirty))
     (modal "Are you sure? Unsaved changes will be lost. (yes/No/save)"
            :input
-           | (do (case (string/ascii-lower (editor-state :modalinput)) 
-                   "yes" (set quit true)
-                   "n" (send-status-msg "Tip: Ctrl + s to Save.")
-                   "no" (send-status-msg "Tip: Ctrl + s to Save.")
-                   "s" (if (save-file)
-                            (set quit true)
-                            (send-status-msg "Tip: Ctrl + s to Save."))
-                   "save" (if (save-file)
-                            (set quit true)
-                            (send-status-msg "Tip: Ctrl + s to Save."))
-                   (send-status-msg "Tip: Ctrl + s to Save."))))
+           confirm-close)
     (set quit true)))
 
 (varfn close-file []
   (if (< 0 (editor-state :dirty))
     (modal "Are you sure? Unsaved changes will be lost. (yes/No/save)"
            :input
-           | (do (case (string/ascii-lower (editor-state :modalinput)) 
-                   "yes" (set quit true)
-                   "n" (send-status-msg "Tip: Ctrl + s to Save.")
-                   "no" (send-status-msg "Tip: Ctrl + s to Save.")
-                   "s" (if (save-file)
-                            (set quit true)
-                            (send-status-msg "Tip: Ctrl + s to Save."))
-                   "save" (if (save-file)
-                            (set quit true)
-                            (send-status-msg "Tip: Ctrl + s to Save."))
-                   (send-status-msg "Tip: Ctrl + s to Save."))))
+           confirm-close)
     (do (reset-editor-state)
       (send-status-msg "File closed."))))
 
