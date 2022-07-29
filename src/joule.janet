@@ -537,8 +537,9 @@
 
 (defn move-cursor-modal [direction]
   (case direction
-    :home (set (editor-state :cx) modal-home)
-    :end (set (editor-state :cx) (+ modal-home (editor-state :modalinput)))))
+    :home (set (editor-state :cx) (modal-home))
+    :end (set (editor-state :cx) (+ (modal-home) 
+                                    (safe-len (editor-state :modalinput))))))
 
 (defn modal-handle-typing [key]
   (let [char (string/format "%c" key)
@@ -547,7 +548,11 @@
     (move-cursor :right)))
 
 (defn modal-process-keypress [kind] 
-  (let [key (read-key)]
+  (let [key (read-key)
+        at-home (= (editor-state :cx) (modal-home))
+        at-end (= (editor-state :cx) 
+                  (+ (modal-home)
+                     (safe-len (editor-state :modalinput))))]
     (case (get keymap key key)
       (ctrl-key (chr "q")) (set modal-cancel true)
       (ctrl-key (chr "n")) (break) 
@@ -557,8 +562,12 @@
       
       :enter (set modal-active false)
 
-      :backspace (delete-char-modal :backspace)
-      :del (delete-char-modal :delete)
+      :backspace (cond
+                   at-home (break)
+                   (delete-char-modal :backspace))
+      :del (cond
+             at-end (break)
+             (delete-char-modal :delete))
 
       :pageup (move-cursor-modal :home)
       :pagedown (move-cursor-modal :end)
@@ -566,10 +575,18 @@
       # TODO: Implement autocompletion
       :tab (break)
 
-      :uparrow (move-cursor :left)
-      :downarrow (move-cursor :right)
-      :leftarrow (move-cursor :left)
-      :rightarrow (move-cursor :right)
+      :uparrow (cond
+                   at-home (break)
+                   (move-cursor :left))
+      :downarrow (cond
+                    at-end (break)
+                    (move-cursor :right))
+      :leftarrow (cond
+                   at-home (break)
+                   (move-cursor :left))
+      :rightarrow (cond
+                    at-end (break)
+                    (move-cursor :right))
 
       # TODO: Implement these
       :ctrluparrow (break)
