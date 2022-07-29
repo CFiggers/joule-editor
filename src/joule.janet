@@ -239,6 +239,7 @@
                   "Ctrl + q                 quit"
                   "Ctrl + l                 load"
                   "Ctrl + s                 save"
+                  "Ctrl + a              save as"
                   "Ctrl + n       toggle numbers"])
   (if (deep= @[] (flatten (editor-state :erows)))
     (let [r (editor-state :screenrows)
@@ -434,6 +435,7 @@
 # Declaring out of order to allow type checking to pass
 (varfn exit-editor [])
 (varfn save-file [])
+(varfn save-file-as [])
 (varfn load-file-modal [])
 (varfn close-file [])
 
@@ -447,7 +449,8 @@
       (ctrl-key (chr "q")) (exit-editor)
       (ctrl-key (chr "n")) (toggle-line-numbers)
       (ctrl-key (chr "l")) (load-file-modal)
-      (ctrl-key (chr "s")) (save-file)
+      (ctrl-key (chr "s")) (save-file) 
+      (ctrl-key (chr "a")) (save-file-as) 
       (ctrl-key (chr "w")) (close-file)
 
       # If on home page of file
@@ -645,6 +648,13 @@
   (set (editor-state :dirty) 0)
        (send-status-msg (string "File saved!"))
   true)
+
+(varfn save-file-as [] 
+   (ask-filename-modal)
+   (unless modal-cancel
+           (spit (editor-state :filename) (string/join (editor-state :erows) "\n"))
+           (set (editor-state :dirty) 0)
+           (send-status-msg (string "File saved!"))))
 
 (varfn load-file-modal []
   (modal "Load what file?" :input |(load-file (editor-state :modalinput))) 
