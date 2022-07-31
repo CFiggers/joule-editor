@@ -163,15 +163,15 @@
     
     :home (edset :coloffset 0)
     :end (edset :coloffset
-              (+ 10 (- (rowlen (abs-y))
-                       (editor-state :screencols))))
+                (+ 10 (- (rowlen (abs-y))
+                         (editor-state :screencols))))
     
     :pageup (edset :rowoffset
-                 (max 0 (- (editor-state :rowoffset)
-                           (dec (editor-state :screenrows)))))
+                   (max 0 (- (editor-state :rowoffset)
+                             (dec (editor-state :screenrows)))))
     :pagedown (edset :rowoffset
-                   (+ (editor-state :rowoffset)
-                      (dec (editor-state :screenrows))))))
+                     (+ (editor-state :rowoffset)
+                        (dec (editor-state :screenrows))))))
 
 (defn move-cursor-home []
   (move-viewport :home)
@@ -255,6 +255,7 @@
                   "Ctrl + l                 load"
                   "Ctrl + s                 save"
                   "Ctrl + a              save as"
+                  "Ctrl + f               search"
                   "Ctrl + n       toggle numbers"])
   (if (deep= @[] (flatten (editor-state :erows)))
     (let [r (editor-state :screenrows)
@@ -400,12 +401,12 @@
     #Move viewport
     (when (> (editor-state :rowoffset) (safe-len (editor-state :erows)))
       (edset :rowoffset (max 0 (- (safe-len (editor-state :erows))
-                                  (math/trunc (/ (editor-state 
+                                  (math/trunc (/ (editor-state
                                                   :screenrows) 2))))))
     #Move cursor
     (edset :cy (dec (- (safe-len (editor-state :erows))
-                 (editor-state :rowoffset)))
-           :cx (max-x (abs-y)))))
+                       (editor-state :rowoffset))))
+    (edset :cx (max-x (abs-y)))))
 
 (defn editor-handle-typing [key]
   (handle-out-of-bounds)
@@ -448,9 +449,10 @@
 (varfn save-file-as [])
 (varfn load-file-modal [])
 (varfn close-file [])
+(varfn find-in-text-modal [])
 
-(defn editor-process-keypress []
-  (let [key (read-key) #Blocks here waiting on keystroke
+(defn editor-process-keypress [&opt in-key]
+  (let [key (or in-key (read-key)) #Blocks here waiting on keystroke
         cx (editor-state :cx)
         cy (editor-state :cy)
         v-offset (editor-state :rowoffset)
@@ -462,12 +464,13 @@
       (ctrl-key (chr "s")) (save-file) 
       (ctrl-key (chr "a")) (save-file-as) 
       (ctrl-key (chr "w")) (close-file)
+      (ctrl-key (chr "f")) (find-in-text-modal)
 
       # If on home page of file
-      :pageup (if (= 0 v-offset) 
-             (do (move-cursor :home)
-                 (edset :cy 0))
-             (move-viewport :pageup))
+      :pageup (if (= 0 v-offset)
+                (do (move-cursor :home)
+                    (edset :cy 0))
+                (move-viewport :pageup))
       :pagedown (move-viewport :pagedown)
 
       :home (move-cursor :home)
@@ -478,21 +481,21 @@
 
       # If cursor at margin and viewport at far left
       :leftarrow (do (if (= (abs-x) 0)
-                 (wrap-to-end-of-prev-line)
-                 (move-cursor :left))
-               (edset :rememberx 0))
+                       (wrap-to-end-of-prev-line)
+                       (move-cursor :left))
+                     (edset :rememberx 0))
 
       # If cursor at end of current line, accounting for horizontal scrolling
       :rightarrow (do (if (= (abs-x) (rowlen (abs-y)))
-                 (wrap-to-start-of-next-line)
-                 (move-cursor :right))
-               (edset :rememberx 0))
+                        (wrap-to-start-of-next-line)
+                        (move-cursor :right))
+                      (edset :rememberx 0))
 
       # If on top row of file
       :uparrow (do (if (= (abs-y) 0)
-                 (move-cursor :home)
-                 (move-cursor-with-mem :up)) 
-               (update-x-memory cx))
+                     (move-cursor :home)
+                     (move-cursor-with-mem :up))
+                   (update-x-memory cx))
 
       :downarrow (do (move-cursor-with-mem :down)
                 (update-x-memory cx))
@@ -578,15 +581,14 @@
       (ctrl-key (chr "l")) (break) 
       (ctrl-key (chr "s")) (break) 
       (ctrl-key (chr "w")) (break) 
+      (ctrl-key (chr "f")) (break) 
       
       :enter (set modal-active false)
 
-      :backspace (cond
-                   at-home (break)
-                   (delete-char-modal :backspace))
-      :del (cond
-             at-end (break)
-             (delete-char-modal :delete))
+      :backspace (cond at-home (break)
+                       (delete-char-modal :backspace))
+      :del (cond at-end (break)
+                 (delete-char-modal :delete))
 
       :pageup (move-cursor-modal :home)
       :pagedown (move-cursor-modal :end)
@@ -626,16 +628,20 @@
       
       (modal-handle-typing key))))
 
-(defn modal [message kind callback &opt modalendput]
+(defn modal [message kind callback &named modalendput return-home]
+  (default return-home true)
   (let [ret-x (editor-state :cx)
         ret-y (editor-state :cy)]
-    
-    # Init modal-related state
+
+    #Init modal-related state
     (edset :statusmsg ""
            :modalinput ""
            :modalmsg message)
-    (edset :cx (modal-home)
-           :cy (+ (editor-state :screenrows) 2))
+    #Two separate calls to edset because (modal-home) depends
+    #on :modalmsg, so first call needs to commit before second
+    #runs correctly
+    (edset :cx (modal-home))
+    (edset :cy (+ (editor-state :screenrows) 2))
 
     (set modal-active true)
     (set modal-cancel false)
@@ -648,9 +654,10 @@
     # Clean up modal-related state
 
     (edset :modalmsg ""
-           :modalinput (or modalendput "")
-           :cx ret-x
-           :cy ret-y)))
+           :modalinput (or modalendput ""))
+    (when return-home
+      (edset :cx ret-x
+             :cy ret-y))))
 
 ### File I/O ###
 
@@ -689,7 +696,120 @@
     (load-file file)
     (send-status-msg "Tip: Ctrl + Q = quit")))
 
-# Init and main
+### Search ###
+
+(defn init-find []
+  (edset :tempx (editor-state :cx)
+         :tempy (editor-state :cy)
+         :temp-rowoffset (editor-state :rowoffset)
+         :temp-coloffset (editor-state :coloffset)))
+
+(defn exit-find []
+  (edset :tempx nil
+         :tempy nil
+         :temp-rowoffset nil
+         :temp-coloffset nil
+         :search-results nil))
+
+(defn move-to-match []
+  (assert (> (safe-len (editor-state :search-results)) 0)) 
+  #Search rest of current row
+  (let [all-results (editor-state :search-results)
+        filter-fn (fn [[y x]] (or (> y (abs-y)) (and (= y (abs-y)) (> x (abs-x)))))
+        next-results (sort (filter filter-fn all-results))
+        [y x] (or (first next-results) (first all-results))]
+    (edset :rowoffset (max 0 (- y (math/trunc (/ (editor-state :screenrows) 2))))
+           :coloffset (max 0 (+ 10 (- x (editor-state :screencols)))))
+    (edset :cy (- y (editor-state :rowoffset))
+           :cx (- x (editor-state :coloffset)))
+    (editor-refresh-screen)))
+
+(comment 
+  (do (move-to-match)
+      editor-state) )
+
+(comment
+  (reset-editor-state)
+  (load-file "LICENSE")
+  (find-all "ar")
+
+  #Testing move-to-match
+  (var x 0)
+  (var y 0)
+  
+  (do (def all-results (editor-state :search-results))
+      (def filter-fn (fn [[y x]] (or (> y (abs-y)) (and (= y (abs-y)) (> x (abs-x))))))
+      (def next-results (sort (filter filter-fn all-results)))
+      (set y (first (or (first next-results) (first all-results))))
+      (set x (last (or (first next-results) (first all-results))))
+      (print y)
+      (print x))
+  (do (edset :rowoffset (max 0 (- y (math/trunc (/ (editor-state :screenrows) 2))))
+             :coloffset (max 0 (+ 10 (- x (editor-state :screencols)))))
+      (edset :cy (- y (editor-state :rowoffset))
+             :cx (- x (editor-state :coloffset)))
+      [(editor-state :cy) (editor-state :cx)])
+
+  (edset :cx 0 :cy 0)
+  )
+
+(defn find-next [&opt init]
+  # Record current cursor and window position to return later
+  (when init
+    (init-find)
+    (move-to-match)) 
+
+  (let [key (read-key)]
+    (case (get keymap key key)
+      :enter (do (move-to-match)
+                 (find-next))
+      :esc # Return to recorded cursor and window position 
+      (do (edset :cx (editor-state :tempx)
+                 :cy (editor-state :tempy)
+                 :rowoffset (editor-state :temp-rowoffset)
+                 :coloffset (editor-state :temp-coloffset))
+          (exit-find)
+          (editor-refresh-screen))
+      
+      # Otherwise
+      (do (exit-find)
+          # Process keypress normally
+          (editor-process-keypress key)))))
+
+(defn find-all [search-str]
+  (let [finds (map | (string/find-all search-str $) (editor-state :erows))
+           i-finds @[]
+           _ (each i finds (array/push i-finds [(index-of i finds) i]))
+           filtered (filter |(not (empty? (last $))) i-finds)
+           distribute (fn [[y arr]] (map |(array y $) arr))
+           final-finds (partition 2 (flatten (map distribute filtered)))]
+    (if final-finds
+      (edset :search-results final-finds)
+      (send-status-msg "No matches found."))))
+
+(comment
+  # Testing find-all
+  (reset-editor-state)
+  (load-file "LICENSE")
+  (def search-str "ar")
+
+  (def finds (map | (string/find-all search-str $) (editor-state :erows)))
+  (def i-finds @[])
+  (def _ (each i finds (array/push i-finds [(index-of i finds) i])))
+  i-finds
+  (def filtered (filter | (not (empty? (last $))) i-finds))
+  (def distribute (fn [[y arr]] (map | (array y $) arr)))
+  (def final-finds (partition 2 (flatten (map distribute filtered))))
+  (edset :search-results final-finds)
+  editor-state)
+
+(varfn find-in-text-modal []
+       (modal "Search: " :input |(do (find-all (editor-state :modalinput))
+                                      (when (editor-state :search-results)
+                                        (find-next true)))
+              :return-home false))
+
+### Init and main ###
 
 # TODO: Implement user config dotfile
 
