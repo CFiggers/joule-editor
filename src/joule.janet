@@ -22,7 +22,11 @@
    1009 :ctrlleftarrow
    1010 :ctrlrightarrow
    1011 :ctrluparrow
-   1012 :ctrldownarrow})
+   1012 :ctrldownarrow
+   1013 :shiftleftarrow
+   1014 :shiftrightarrow
+   1015 :shiftuparrow
+   1016 :shiftdownarrow})
 
 ### Data ###
 
@@ -499,6 +503,12 @@
       :ctrluparrow (break)
       :ctrldownarrow (break)
       
+      # TODO: Shift + arrows
+      :shiftleftarrow (break)
+      :shiftrightarrow (break)
+      :shiftuparrow (break)
+      :shiftdownarrow (break)
+      
       :enter (carriage-return)
 
       # TODO: Escape
@@ -602,6 +612,12 @@
       :ctrldownarrow (break)
       :ctrlleftarrow (break)
       :ctrlrightarrow (break)
+      
+      # TODO: Shift + arrows
+      :shiftleftarrow (break)
+      :shiftrightarrow (break)
+      :shiftuparrow (break)
+      :shiftdownarrow (break)
 
       :home (move-cursor-modal :home)
       :end (move-cursor-modal :end)
