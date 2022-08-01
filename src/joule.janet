@@ -57,7 +57,7 @@
             :screenrows (- ((get-window-size) :rows) 2)
             :screencols ((get-window-size) :cols)
             :userconfig @{:scrollpadding 5
-                          :tabsize 4
+                          :tabsize 2
                           :indentwith :spaces
                           :numtype :on}}))
 
@@ -286,7 +286,8 @@
 ### Syntax Highlighting ### 
 
 (def highlight-rules
-  (peg/compile ~{:ws (<- (set " \t\r\f\n\0\v"))
+  (peg/compile ~{:comment (replace (<- (* "#" (any 1))) ,|(color $ :green))
+                 :ws (<- (set " \t\r\f\n\0\v"))
                  :delim (+ :ws (set "([{\"`}])"))
                  :symchars (+ (range "09" "AZ" "az" "\x80\xFF") (set "!$%&*+-./:<?=>@^_"))
                  :numbers (replace (<- :d+) ,|(color $ :yellow))
@@ -294,11 +295,8 @@
                  :symbol (replace (<- (some (+ :symchars "-"))) ,|(color $ :cyan))
                  :special (replace (* (<- (+ ,;core-fns)) :ws) ,|(string (color $0 :magenta) $1)) 
                  :else (<- 1)
-                 :value (+ :numbers :keyword :special :symbol :ws :else)
+                 :value (+ :comment :numbers :keyword :special :symbol :ws :else)
                  :main (some :value)}))
-
-(comment
-  (prin (string/join (peg/match janet-grammar (slurp "../../keyspy.janet")))))
 
 (defn insert-highlight [str]
   (if (= str "") "" 
