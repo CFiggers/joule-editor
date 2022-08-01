@@ -1,8 +1,8 @@
 # Joule editor
 
-A simple terminal-based text editor written in [Janet](janet-lang/janet). Follows [this guide](https://viewsourcecode.org/snaptoken/kilo/index.html) by [paigeruten](https://github.com/paigeruten).
+A simple terminal-based text editor written in [Janet](janet-lang/janet). Inspired by (but not a full faithful recreation of) [this guide](https://viewsourcecode.org/snaptoken/kilo/index.html) by [paigeruten](https://github.com/paigeruten).
 
-<img width="575" alt="image" src="https://user-images.githubusercontent.com/55862180/180586621-ce0e8d2c-cb23-411f-bcf4-8fb59797e577.png">
+<img width="715" alt="image" src="https://user-images.githubusercontent.com/55862180/181847990-41ff351f-fb29-49fa-90ce-08d4afd6287a.png">
 
 ## Getting Started 
 
