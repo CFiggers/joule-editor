@@ -1,4 +1,5 @@
 (use janet-termios)
+(use "./core-fns")
 
 ### Definitions ###
 
@@ -44,6 +45,7 @@
             :rowoffset 0
             :coloffset 0
             :erows @[]
+            :hl @[]
             :dirty 0
             :linenumbers true
             :leftmargin 3
@@ -118,6 +120,45 @@
 
 (defn update-minput [f]
   (edup :modalinput f))
+
+(defn color 
+  ```
+  Return `text` surrounded by ANSI color codes corresponding to `color-key`.
+   
+  Options are: 
+  - :black 
+  - :red
+  - :green 
+  - :yellow
+  - :blue 
+  - :magenta
+  - :cyan 
+  - :white
+  - :default
+  ```
+  [text color-key]
+  (if-let [color-code
+           (case color-key
+             :black 0 :red 1
+             :green 2 :yellow 3
+             :blue 4 :magenta 5
+             :cyan 6 :white 7
+             :default 9)]
+    (string "\e[0;3" color-code "m" text "\e[0m")
+    text))
+
+(defn bg-color
+  
+  [text color-key]
+  (if-let [color-code
+           (case color-key
+             :black 0 :red 1
+             :green 2 :yellow 3
+             :blue 4 :magenta 5
+             :cyan 6 :white 7
+             :default 9)]
+    (string "\e[0;4" color-code "m" text "\e[0m")
+    text))
 
 ### Editor State Functions ###
 
@@ -242,7 +283,31 @@
   (move-cursor :down)
   (move-cursor :home))
 
+### Syntax Highlighting ### 
+
+(def highlight-rules
+  (peg/compile ~{:ws (<- (set " \t\r\f\n\0\v"))
+                 :delim (+ :ws (set "([{\"`}])"))
+                 :symchars (+ (range "09" "AZ" "az" "\x80\xFF") (set "!$%&*+-./:<?=>@^_"))
+                 :numbers (replace (<- :d+) ,|(color $ :yellow))
+                 :keyword (replace (<- (* ":" (some :symchars))) ,|(color $ :magenta)) 
+                 :symbol (replace (<- (some (+ :symchars "-"))) ,|(color $ :cyan))
+                 :special (replace (* (<- (+ ,;core-fns)) :ws) ,|(string (color $0 :magenta) $1)) 
+                 :else (<- 1)
+                 :value (+ :numbers :keyword :special :symbol :ws :else)
+                 :main (some :value)}))
+
+(comment
+  (prin (string/join (peg/match janet-grammar (slurp "../../keyspy.janet")))))
+
+(defn insert-highlight [str]
+  (if (= str "") "" 
+    (string/join (peg/match highlight-rules str))))
+
 ### Output ###
+
+(defn add-syntax-hl [rows]
+  (map insert-highlight rows))
 
 (defn fuse-over [priority secondary]
   (let [dup (array/slice priority)]
@@ -274,7 +339,7 @@
     rows))
 
 (defn trim-to-width [rows]
-  (let [cols (- (editor-state :screencols) 1)]
+  (let [cols (- (editor-state :screencols) 1 (get-margin))]
     (map |(if (> (safe-len $) cols)
              (string/slice $ 0 cols) $) rows)))
 
@@ -330,7 +395,7 @@
 
 (defn fill-empty-rows [rows]
   (let [r (range (editor-state :screenrows))
-        fill (map (fn [_] (string "\e[0;34m" "~" "\e[0m")) r)] 
+        fill (map (fn [_] (string (color "~" :blue))) r)] 
     (fuse-over rows fill)))
 
 (defn add-status-bar [rows]
@@ -360,10 +425,11 @@
        (render-tabs)
        (slice-rows)
        (apply-h-scroll)
+       (trim-to-width)
+       (add-syntax-hl)
        (fill-empty-rows)
        (add-welcome-message)
        (apply-margin)
-       (trim-to-width)
        (add-status-bar)
        (join-rows)))
 
