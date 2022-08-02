@@ -739,12 +739,15 @@
 
 ### File I/O ###
 
+(varfn confirm-lose-changes [])
+
 (defn load-file [filename]
   (let [erows (string/split "\n" (try (slurp filename) 
                                       ([e f] (spit filename "")
-                                             (slurp filename))))]
-    (edset :filename filename
-           :erows erows)))
+                                             (slurp filename))))
+        callback |(edset :filename filename
+                         :erows erows)]
+    (confirm-lose-changes callback)))
 
 (defn ask-filename-modal []
   (modal "Filename?" :input |(edset :filename (editor-state :modalinput))))
@@ -853,29 +856,32 @@
 
 # TODO: Implement user config dotfile
 
-(defn confirm-lose-changes [callback]
-  (do (case (string/ascii-lower (editor-state :modalinput))
-        "yes" (callback)
-        "n" (send-status-msg "Tip: Ctrl + s to Save.")
-        "no" (send-status-msg "Tip: Ctrl + s to Save.")
-        "s" (if (save-file)
-              (callback)
-              (send-status-msg "Tip: Ctrl + s to Save."))
-        "save" (if (save-file)
-                 (callback)
-                 (send-status-msg "Tip: Ctrl + s to Save."))
-        (send-status-msg "Tip: Ctrl + s to Save."))))
+(varfn confirm-lose-changes [callback]
+  (let [dispatch 
+        |(do (case (string/ascii-lower (editor-state :modalinput))
+                   "yes" (callback)
+                   "n" (send-status-msg "Tip: Ctrl + s to Save.")
+                   "no" (send-status-msg "Tip: Ctrl + s to Save.")
+                   "s" (if (save-file)
+                         (callback)
+                         (send-status-msg "Tip: Ctrl + s to Save."))
+                   "save" (if (save-file)
+                            (callback)
+                            (send-status-msg "Tip: Ctrl + s to Save.")))
+             (send-status-msg "Tip: Ctrl + s to Save."))]
+    (if (< 0 (editor-state :dirty))
+      (do (modal "Are you sure? Unsaved changes will be lost. (yes/No/save)"
+                 :input 
+                 dispatch)
+          (edset :dirty 0))
+      (callback))))
 
 (varfn close-file [kind]
   (let [callback (case kind 
                    :quit |(set quit true)
                    :close |(do (reset-editor-state)
                                (send-status-msg "File closed.")))]
-    (if (< 0 (editor-state :dirty))
-      (modal "Are you sure? Unsaved changes will be lost. (yes/No/save)"
-             :input
-             |(confirm-lose-changes callback))
-      (callback))))
+    (confirm-lose-changes callback)))
 
 (defn load-config [] 
   )
