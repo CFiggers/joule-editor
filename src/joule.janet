@@ -641,11 +641,32 @@
 
 (var modal-cancel false)
 
+(var modal-rethome false)
+
 (defn delete-char-modal [direction]
   (let [mx (- (abs-x) (safe-len (editor-state :modalmsg)) 4)]
     (when (= direction :backspace)
       (move-cursor :left))
     (update-minput | (string/cut $ mx))))
+
+(defn set-temp-pos []
+  (edset :tempx (editor-state :cx)
+         :tempy (editor-state :cy)
+         :temp-rowoffset (editor-state :rowoffset)
+         :temp-coloffset (editor-state :coloffset)))
+
+(defn return-to-temp-pos []
+  (edset :cx (editor-state :tempx)
+         :cy (editor-state :tempy)
+         :rowoffset (editor-state :temp-rowoffset)
+         :coloffset (editor-state :temp-coloffset)))
+
+(defn clear-temp-pos []
+  (edset :tempx nil
+         :tempy nil
+         :temp-rowoffset nil
+         :temp-coloffset nil
+         :search-results nil))
 
 (defn modal-home []
   (+ (safe-len (editor-state :modalmsg)) 3))
@@ -724,8 +745,7 @@
       
       (modal-handle-typing key))))
 
-(defn modal [message kind callback &named modalendput return-home]
-  (default return-home true)
+(defn modal [message kind callback &named modalendput]
   (let [ret-x (editor-state :cx)
         ret-y (editor-state :cy)]
 
@@ -747,13 +767,13 @@
 
     (unless modal-cancel (callback))
 
-    # Clean up modal-related state
+    #Clean up modal-related state
 
     (edset :modalmsg ""
            :modalinput (or modalendput ""))
-    (when return-home
-      (edset :cx ret-x
-             :cy ret-y))))
+    (when modal-rethome
+      (return-to-temp-pos))
+    (clear-temp-pos)))
 
 ### File I/O ###
 
@@ -797,19 +817,6 @@
 
 ### Search ###
 
-(defn init-find []
-  (edset :tempx (editor-state :cx)
-         :tempy (editor-state :cy)
-         :temp-rowoffset (editor-state :rowoffset)
-         :temp-coloffset (editor-state :coloffset)))
-
-(defn exit-find []
-  (edset :tempx nil
-         :tempy nil
-         :temp-rowoffset nil
-         :temp-coloffset nil
-         :search-results nil))
-
 (defn move-to-match []
   (assert (> (safe-len (editor-state :search-results)) 0)) 
   #Search rest of current row
@@ -823,12 +830,6 @@
            :cx (- x (editor-state :coloffset)))
     (editor-refresh-screen)))
 
-(defn return-to-temp []
-  (edset :cx (editor-state :tempx)
-                 :cy (editor-state :tempy)
-                 :rowoffset (editor-state :temp-rowoffset)
-                 :coloffset (editor-state :temp-coloffset)))
-
 # BUG: Find currently skips first apparent result in file?
 # TODO: Implement case sensitive vs insensitive search
 # TODO: Implement find and replace
@@ -839,19 +840,22 @@
 (defn find-next [&opt init]
   # Record current cursor and window position to return later
   (when init
+    (set modal-rethome false)
     (move-to-match)) 
 
-  (let [key (read-key)]
-    (case (get keymap key key) 
+  (let [key (read-key)
+        exit-search |(do (return-to-temp-pos)
+                         (clear-temp-pos)
+                         (editor-refresh-screen))]
+    (case (get keymap key key)
+      (ctrl-key (chr "q")) (exit-search)
+
       :enter (do (move-to-match)
                  (find-next))
-      :esc # Return to recorded cursor and window position 
-      (do (return-to-temp)
-          (exit-find)
-          (editor-refresh-screen))
+      :esc (exit-search)
       
       # Otherwise
-      (do (exit-find)
+      (do (clear-temp-pos)
           # Process keypress normally
           (editor-process-keypress key)))))
 
@@ -867,14 +871,14 @@
       (send-status-msg "No matches found."))))
 
 (varfn find-in-text-modal []
-       (init-find)
-       (modal "Search: " :input |(do (find-all (editor-state :modalinput))
+       (set-temp-pos)
+       (set modal-rethome true)
+       (modal "Search: " :input | (do (find-all (editor-state :modalinput))
                                       (if (< 0 (safe-len (editor-state :search-results)))
                                         (find-next true)
-                                        (do (return-to-temp)
-                                            (exit-find)
-                                            (send-status-msg "No matches found."))))
-              :return-home false))
+                                        (do (return-to-temp-pos)
+                                            (clear-temp-pos)
+                                            (send-status-msg "No matches found."))))))
 
 ### Init and main ###
 
