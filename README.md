@@ -6,7 +6,7 @@ A simple terminal-based text editor written in [Janet](janet-lang/janet). Inspir
 
 ## Getting Started 
 
-Requires [Janet](https://www.github.com/janet-lang/janet) and [JPM](https://www.github.com/janet-lang/jpm).
+Requires [Janet](https://www.github.com/janet-lang/janet) and [JPM](https://www.github.com/janet-lang/jpm). Not tested on Windows.
 
 1. Clone this repo (for e.g., with the GitHub CLI, `$ gh repo clone CFiggers/joule-editor`.)
 
