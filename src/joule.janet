@@ -823,6 +823,12 @@
            :cx (- x (editor-state :coloffset)))
     (editor-refresh-screen)))
 
+(defn return-to-temp []
+  (edset :cx (editor-state :tempx)
+                 :cy (editor-state :tempy)
+                 :rowoffset (editor-state :temp-rowoffset)
+                 :coloffset (editor-state :temp-coloffset)))
+
 # BUG: Find currently skips first apparent result in file?
 # TODO: Implement case sensitive vs insensitive search
 # TODO: Implement find and replace
@@ -833,18 +839,14 @@
 (defn find-next [&opt init]
   # Record current cursor and window position to return later
   (when init
-    (init-find)
     (move-to-match)) 
 
   (let [key (read-key)]
-    (case (get keymap key key)
+    (case (get keymap key key) 
       :enter (do (move-to-match)
                  (find-next))
       :esc # Return to recorded cursor and window position 
-      (do (edset :cx (editor-state :tempx)
-                 :cy (editor-state :tempy)
-                 :rowoffset (editor-state :temp-rowoffset)
-                 :coloffset (editor-state :temp-coloffset))
+      (do (return-to-temp)
           (exit-find)
           (editor-refresh-screen))
       
@@ -865,9 +867,13 @@
       (send-status-msg "No matches found."))))
 
 (varfn find-in-text-modal []
+       (init-find)
        (modal "Search: " :input |(do (find-all (editor-state :modalinput))
-                                      (when (editor-state :search-results)
-                                        (find-next true)))
+                                      (if (< 0 (safe-len (editor-state :search-results)))
+                                        (find-next true)
+                                        (do (return-to-temp)
+                                            (exit-find)
+                                            (send-status-msg "No matches found."))))
               :return-home false))
 
 ### Init and main ###
