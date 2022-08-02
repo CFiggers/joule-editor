@@ -292,6 +292,7 @@
 
 # TODO: Correctly color strings across line breaks
 # TODO: Janet Long strings w/ ``` syntax
+# TODO: Extensible syntax highlighting scheme
 
 (def highlight-rules
   (peg/compile ~{:comment (replace (<- (* "#" (any 1))) ,|(color $ :drab-green))
@@ -302,7 +303,7 @@
                  :numbers (replace (<- (some (+ :d "."))) ,|(color $ :cream-green))
                  :keyword (replace (<- (* ":" (some :symchars))) ,|(color $ :magenta)) 
                  :symbol (replace (<- (some (+ :symchars "-"))) ,|(color $ :powder-blue))
-                 :special (replace (* (<- (+ ,;special-forms ,;core-fns)) :ws) ,|(string (color $0 :magenta) $1)) 
+                 :special (replace (* (<- (+ ,;core-fns ,;special-forms)) :ws) ,|(string (color $0 :magenta) $1)) 
                  :else (<- 1)
                  :value (+ :comment :string :numbers :keyword :special :symbol :ws :else)
                  :main (some :value)}))
@@ -896,6 +897,7 @@
     (prin "\e[?1049l")))
 
 # TODO: Write function tests
+# TODO: Plugins?
 
 (defn main [& args]
   (init args)
