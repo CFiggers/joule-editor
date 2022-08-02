@@ -200,6 +200,9 @@
 # TODO: Implement buffer of lines to keep at top/bottom of screen
 # when scrolling up/down, based on [:userconfig :scrollpadding]
 
+# TODO: Implement jump to line number
+# TODO: Implement jump to start/end of file
+
 (defn move-viewport [direction]
   (case direction
     :up (edup :rowoffset dec)
@@ -515,7 +518,6 @@
       (edup :erows |(array/remove $ (inc (abs-y)))))))
 
 # Declaring out of order to allow type checking to pass
-(varfn exit-editor [])
 (varfn save-file [])
 (varfn save-file-as [])
 (varfn load-file-modal [])
@@ -529,12 +531,12 @@
         v-offset (editor-state :rowoffset)
         h-offset (editor-state :coloffset)]
     (case (get keymap key key)
-      (ctrl-key (chr "q")) (exit-editor)
+      (ctrl-key (chr "q")) (close-file :quit)
       (ctrl-key (chr "n")) (toggle-line-numbers)
       (ctrl-key (chr "l")) (load-file-modal)
       (ctrl-key (chr "s")) (save-file) 
       (ctrl-key (chr "a")) (save-file-as) 
-      (ctrl-key (chr "w")) (close-file)
+      (ctrl-key (chr "w")) (close-file :close)
       (ctrl-key (chr "f")) (find-in-text-modal)
       (ctrl-key (chr "z")) (break) # TODO: Undo in normal typing
       (ctrl-key (chr "y")) (break) # TODO: Redo in normal typing
@@ -571,7 +573,7 @@
                    (update-x-memory cx))
 
       :downarrow (do (move-cursor-with-mem :down)
-                (update-x-memory cx))
+                     (update-x-memory cx))
       
       # TODO: Ctrl + arrows
       :ctrlleftarrow (break)
@@ -851,33 +853,29 @@
 
 # TODO: Implement user config dotfile
 
-(defn confirm-close []
+(defn confirm-lose-changes [callback]
   (do (case (string/ascii-lower (editor-state :modalinput))
-        "yes" (set quit true)
+        "yes" (callback)
         "n" (send-status-msg "Tip: Ctrl + s to Save.")
         "no" (send-status-msg "Tip: Ctrl + s to Save.")
         "s" (if (save-file)
-              (set quit true)
+              (callback)
               (send-status-msg "Tip: Ctrl + s to Save."))
         "save" (if (save-file)
-                 (set quit true)
+                 (callback)
                  (send-status-msg "Tip: Ctrl + s to Save."))
         (send-status-msg "Tip: Ctrl + s to Save."))))
 
-(varfn exit-editor []
-  (if (< 0 (editor-state :dirty))
-    (modal "Are you sure? Unsaved changes will be lost. (yes/No/save)"
-           :input
-           confirm-close)
-    (set quit true)))
-
-(varfn close-file []
-  (if (< 0 (editor-state :dirty))
-    (modal "Are you sure? Unsaved changes will be lost. (yes/No/save)"
-           :input
-           confirm-close)
-    (do (reset-editor-state)
-      (send-status-msg "File closed."))))
+(varfn close-file [kind]
+  (let [callback (case kind 
+                   :quit |(set quit true)
+                   :close |(do (reset-editor-state)
+                               (send-status-msg "File closed.")))]
+    (if (< 0 (editor-state :dirty))
+      (modal "Are you sure? Unsaved changes will be lost. (yes/No/save)"
+             :input
+             |(confirm-lose-changes callback))
+      (callback))))
 
 (defn load-config [] 
   )
