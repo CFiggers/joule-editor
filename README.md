@@ -2,7 +2,7 @@
 
 A simple terminal-based text editor written in [Janet](janet-lang/janet). Inspired by (but not a full faithful recreation of) [this guide](https://viewsourcecode.org/snaptoken/kilo/index.html) by [paigeruten](https://github.com/paigeruten).
 
-<img width="715" alt="image" src="https://user-images.githubusercontent.com/55862180/181847990-41ff351f-fb29-49fa-90ce-08d4afd6287a.png">
+![joule_demo_080122](https://user-images.githubusercontent.com/55862180/182268962-90e2c30a-d9d7-4281-933f-a9ff4cd94a4e.gif)
 
 ## Getting Started 
 
