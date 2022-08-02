@@ -45,11 +45,11 @@
             :rowoffset 0
             :coloffset 0
             :erows @[]
-            :hl @[]
             :dirty 0
             :linenumbers true
             :leftmargin 3
             :filename ""
+            :filetype ""
             :statusmsg ""
             :statusmsgtime 0
             :modalmsg ""
@@ -134,6 +134,7 @@
   - :magenta
   - :cyan 
   - :white
+  - :brown
   - :default
   ```
   [text color-key]
@@ -288,6 +289,9 @@
   (move-cursor :home))
 
 ### Syntax Highlighting ### 
+
+# TODO: Correctly color strings across line breaks
+# TODO: Janet Long strings w/ ``` syntax
 
 (def highlight-rules
   (peg/compile ~{:comment (replace (<- (* "#" (any 1))) ,|(color $ :drab-green))
@@ -534,6 +538,8 @@
       (ctrl-key (chr "a")) (save-file-as) 
       (ctrl-key (chr "w")) (close-file)
       (ctrl-key (chr "f")) (find-in-text-modal)
+      (ctrl-key (chr "z")) (break) # TODO: Undo in normal typing
+      (ctrl-key (chr "y")) (break) # TODO: Redo in normal typing
 
       # If on home page of file
       :pageup (if (= 0 v-offset)
@@ -651,9 +657,12 @@
       (ctrl-key (chr "s")) (break) 
       (ctrl-key (chr "w")) (break) 
       (ctrl-key (chr "f")) (break) 
+      (ctrl-key (chr "z")) (break) # TODO: Undo in modals 
+      (ctrl-key (chr "y")) (break) # TODO: Redo in modals
       
       :enter (set modal-active false)
 
+      # BUG: This is broken when backspacing at end of current line
       :backspace (cond at-home (break)
                        (delete-char-modal :backspace))
       :del (cond at-end (break)
@@ -822,6 +831,13 @@
   (edset :cx 0 :cy 0)
   )
 
+# BUG: Find currently skips first apparent result in file?
+# TODO: Implement case sensitive vs insensitive search
+# TODO: Implement find and replace
+# TODO: Implement Regex search and Regex replace
+# TODO: Incremental highlighting of search term while typing
+# TODO: Jump to previous result in addition to next
+
 (defn find-next [&opt init]
   # Record current cursor and window position to return later
   (when init
@@ -926,6 +942,8 @@
   (disable-raw-mode)
   (when (= (os/which) :linux)
     (prin "\e[?1049l")))
+
+# TODO: Write function tests
 
 (defn main [& args]
   (init args)
