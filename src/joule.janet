@@ -147,21 +147,22 @@
              :brown "38;2;206;145;120"
              :cream-green "38;2;181;206;168"
              :powder-blue "38;2;156;220;254"
-             :drab-green "38;2;106;153;85"
+             :drab-green "38;2;106;153;85" 
              :default "0;39")] 
-    (string "\e[" color-code "m" text "\e[0m")
+    (string "\e[" color-code "m" text "\e[0;39m")
     text))
 
 (defn bg-color 
   [text color-key]
   (if-let [color-code
            (case color-key
-             :black 0 :red 1
-             :green 2 :yellow 3
-             :blue 4 :magenta 5
-             :cyan 6 :white 7
-             :default 9)]
-    (string "\e[0;4" color-code "m" text "\e[0m")
+             :black "0;40" :red "0;41"
+             :green "0;42" :yellow "0;43"
+             :blue "0;44" :magenta "0;45"
+             :cyan "0;46" :white "0;47"
+             :default "0;49"
+             :dull-blue "48;2;38;79;120")]
+    (string "\e[" color-code "m" text "\e[0;49m")
     text))
 
 ### Editor State Functions ###
@@ -311,23 +312,30 @@
                  :main (some :value)}))
 
 (defn search-peg []
-  (let [search-str (if (editor-state :tempx)
-                     (editor-state :modalinput)
-                     "")]
-    ~{:search (replace (<- ,search-str) ,|(bg-color $ :blue))
-      :main search}))
+  (let [search-str (if (and (editor-state :tempx) (editor-state :modalinput))
+                     ~(replace (<- ,(editor-state :modalinput)) ,| (bg-color $ :dull-blue)) 
+                     -1)]
+    ~{:search ,search-str
+      :else (<- 1) 
+      :main (some (+ :search :else))}))
 
-(defn insert-highlight [str peg]
+(defn insert-search-highlight [str peg]
+  (cond 
+    (= str "") "" 
+    (peg/match peg str) (string/join (peg/match peg str))
+    str))
+
+(defn insert-highlight [str]
   (if (= str "") "" 
-    (string/join (peg/match peg str))))
+    (string/join (peg/match highlight-rules str))))
 
 ### Output ###
 
 (defn add-search-hl [rows]
-  (map insert-highlight rows search-peg))
+  (map |(insert-search-highlight $ (search-peg)) rows))
 
 (defn add-syntax-hl [rows]
-  (map insert-highlight rows highlight-rules))
+  (map insert-highlight rows))
 
 (defn fuse-over [priority secondary]
   (let [dup (array/slice priority)]
