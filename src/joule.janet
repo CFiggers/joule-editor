@@ -98,7 +98,7 @@
   (assert (>= at 0) "Can't string/cut: `at` is negative")
   (assert (>= until at) "Can't string/cut: `until` is less than `at`")
   (if (not until)
-    (string
+   (string 
      (string/slice str 0 at)
      (string/slice str (- at (length str))))))
 
@@ -198,6 +198,9 @@
 
 # TODO: Implement buffer of lines to keep at top/bottom of screen
 # when scrolling up/down, based on [:userconfig :scrollpadding]
+
+# TODO: Implement jump to line number
+# TODO: Implement jump to start/end of file
 
 (defn move-viewport [direction]
   (case direction
@@ -525,7 +528,6 @@
       (edup :erows |(array/remove $ (inc (abs-y)))))))
 
 # Declaring out of order to allow type checking to pass
-(varfn exit-editor [])
 (varfn save-file [])
 (varfn save-file-as [])
 (varfn load-file-modal [])
@@ -539,12 +541,12 @@
         v-offset (editor-state :rowoffset)
         h-offset (editor-state :coloffset)]
     (case (get keymap key key)
-      (ctrl-key (chr "q")) (exit-editor)
+      (ctrl-key (chr "q")) (close-file :quit)
       (ctrl-key (chr "n")) (toggle-line-numbers)
       (ctrl-key (chr "l")) (load-file-modal)
       (ctrl-key (chr "s")) (save-file) 
       (ctrl-key (chr "a")) (save-file-as) 
-      (ctrl-key (chr "w")) (close-file)
+      (ctrl-key (chr "w")) (close-file :close)
       (ctrl-key (chr "f")) (find-in-text-modal)
       (ctrl-key (chr "z")) (break) # TODO: Undo in normal typing
       (ctrl-key (chr "y")) (break) # TODO: Redo in normal typing
@@ -581,7 +583,7 @@
                    (update-x-memory cx))
 
       :downarrow (do (move-cursor-with-mem :down)
-                (update-x-memory cx))
+                     (update-x-memory cx))
       
       # TODO: Ctrl + arrows
       :ctrlleftarrow (break)
@@ -632,7 +634,7 @@
 (var modal-cancel false)
 
 (defn delete-char-modal [direction]
-  (let [mx (- (abs-x) (safe-len (editor-state :modalmsg)) 3)]
+  (let [mx (- (abs-x) (safe-len (editor-state :modalmsg)) 4)]
     (when (= direction :backspace)
       (move-cursor :left))
     (update-minput | (string/cut $ mx))))
@@ -747,12 +749,15 @@
 
 ### File I/O ###
 
+(varfn confirm-lose-changes [])
+
 (defn load-file [filename]
   (let [erows (string/split "\n" (try (slurp filename) 
                                       ([e f] (spit filename "")
-                                             (slurp filename))))]
-    (edset :filename filename
-           :erows erows)))
+                                             (slurp filename))))
+        callback |(edset :filename filename
+                         :erows erows)]
+    (confirm-lose-changes callback)))
 
 (defn ask-filename-modal []
   (modal "Filename?" :input |(edset :filename (editor-state :modalinput))))
@@ -861,33 +866,32 @@
 
 # TODO: Implement user config dotfile
 
-(defn confirm-close []
-  (do (case (string/ascii-lower (editor-state :modalinput))
-        "yes" (set quit true)
-        "n" (send-status-msg "Tip: Ctrl + s to Save.")
-        "no" (send-status-msg "Tip: Ctrl + s to Save.")
-        "s" (if (save-file)
-              (set quit true)
-              (send-status-msg "Tip: Ctrl + s to Save."))
-        "save" (if (save-file)
-                 (set quit true)
-                 (send-status-msg "Tip: Ctrl + s to Save."))
-        (send-status-msg "Tip: Ctrl + s to Save."))))
+(varfn confirm-lose-changes [callback]
+  (let [dispatch 
+        |(do (case (string/ascii-lower (editor-state :modalinput))
+                   "yes" (callback)
+                   "n" (send-status-msg "Tip: Ctrl + s to Save.")
+                   "no" (send-status-msg "Tip: Ctrl + s to Save.")
+                   "s" (if (save-file)
+                         (callback)
+                         (send-status-msg "Tip: Ctrl + s to Save."))
+                   "save" (if (save-file)
+                            (callback)
+                            (send-status-msg "Tip: Ctrl + s to Save.")))
+             (send-status-msg "Tip: Ctrl + s to Save."))]
+    (if (< 0 (editor-state :dirty))
+      (do (modal "Are you sure? Unsaved changes will be lost. (yes/No/save)"
+                 :input 
+                 dispatch)
+          (edset :dirty 0))
+      (callback))))
 
-(varfn exit-editor []
-  (if (< 0 (editor-state :dirty))
-    (modal "Are you sure? Unsaved changes will be lost. (yes/No/save)"
-           :input
-           confirm-close)
-    (set quit true)))
-
-(varfn close-file []
-  (if (< 0 (editor-state :dirty))
-    (modal "Are you sure? Unsaved changes will be lost. (yes/No/save)"
-           :input
-           confirm-close)
-    (do (reset-editor-state)
-      (send-status-msg "File closed."))))
+(varfn close-file [kind]
+  (let [callback (case kind 
+                   :quit |(set quit true)
+                   :close |(do (reset-editor-state)
+                               (send-status-msg "File closed.")))]
+    (confirm-lose-changes callback)))
 
 (defn load-config [] 
   )
