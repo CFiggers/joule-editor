@@ -139,12 +139,16 @@
   [text color-key]
   (if-let [color-code
            (case color-key
-             :black 0 :red 1
-             :green 2 :yellow 3
-             :blue 4 :magenta 5
-             :cyan 6 :white 7
-             :default 9)]
-    (string "\e[0;3" color-code "m" text "\e[0m")
+             :black "0;30" :red "0;31"
+             :green "0;32" :yellow "0;33"
+             :blue "0;34" :magenta "38;2;197;134;192"
+             :cyan "0;36" :white "0;37"
+             :brown "38;2;206;145;120"
+             :cream-green "38;2;181;206;168"
+             :powder-blue "38;2;156;220;254"
+             :drab-green "38;2;106;153;85"
+             :default "0;39")] 
+    (string "\e[" color-code "m" text "\e[0m")
     text))
 
 (defn bg-color
@@ -286,16 +290,17 @@
 ### Syntax Highlighting ### 
 
 (def highlight-rules
-  (peg/compile ~{:comment (replace (<- (* "#" (any 1))) ,|(color $ :green))
+  (peg/compile ~{:comment (replace (<- (* "#" (any 1))) ,|(color $ :drab-green))
+                 :string (replace (<- (* "\"" (to "\"") "\"")) ,|(color $ :brown))
                  :ws (<- (set " \t\r\f\n\0\v"))
                  :delim (+ :ws (set "([{\"`}])"))
                  :symchars (+ (range "09" "AZ" "az" "\x80\xFF") (set "!$%&*+-./:<?=>@^_"))
-                 :numbers (replace (<- :d+) ,|(color $ :yellow))
+                 :numbers (replace (<- (some (+ :d "."))) ,|(color $ :cream-green))
                  :keyword (replace (<- (* ":" (some :symchars))) ,|(color $ :magenta)) 
-                 :symbol (replace (<- (some (+ :symchars "-"))) ,|(color $ :cyan))
-                 :special (replace (* (<- (+ ,;core-fns)) :ws) ,|(string (color $0 :magenta) $1)) 
+                 :symbol (replace (<- (some (+ :symchars "-"))) ,|(color $ :powder-blue))
+                 :special (replace (* (<- (+ ,;special-forms ,;core-fns)) :ws) ,|(string (color $0 :magenta) $1)) 
                  :else (<- 1)
-                 :value (+ :comment :numbers :keyword :special :symbol :ws :else)
+                 :value (+ :comment :string :numbers :keyword :special :symbol :ws :else)
                  :main (some :value)}))
 
 (defn insert-highlight [str]
