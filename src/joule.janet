@@ -4,7 +4,7 @@
 ### Definitions ###
 
 (def version
-  "0.0.1")
+  "0.0.2")
 
 (def keymap
   {9 :tab
@@ -152,8 +152,7 @@
     (string "\e[" color-code "m" text "\e[0m")
     text))
 
-(defn bg-color
-  
+(defn bg-color 
   [text color-key]
   (if-let [color-code
            (case color-key
@@ -292,7 +291,7 @@
 
 # TODO: Correctly color strings across line breaks
 # TODO: Janet Long strings w/ ``` syntax
-# TODO: Extensible syntax highlighting scheme
+# TODO: Extensible syntax highlighting schemes for different languages
 
 (def highlight-rules
   (peg/compile ~{:comment (replace (<- (* "#" (any 1))) ,|(color $ :drab-green))
@@ -308,14 +307,24 @@
                  :value (+ :comment :string :numbers :keyword :special :symbol :ws :else)
                  :main (some :value)}))
 
-(defn insert-highlight [str]
+(defn search-peg []
+  (let [search-str (if (editor-state :tempx)
+                     (editor-state :modalinput)
+                     "")]
+    ~{:search (replace (<- ,search-str) ,|(bg-color $ :blue))
+      :main search}))
+
+(defn insert-highlight [str peg]
   (if (= str "") "" 
-    (string/join (peg/match highlight-rules str))))
+    (string/join (peg/match peg str))))
 
 ### Output ###
 
+(defn add-search-hl [rows]
+  (map insert-highlight rows search-peg))
+
 (defn add-syntax-hl [rows]
-  (map insert-highlight rows))
+  (map insert-highlight rows highlight-rules))
 
 (defn fuse-over [priority secondary]
   (let [dup (array/slice priority)]
@@ -435,6 +444,7 @@
        (apply-h-scroll)
        (trim-to-width)
        (add-syntax-hl)
+       (add-search-hl)
        (fill-empty-rows)
        (add-welcome-message)
        (apply-margin)
