@@ -440,9 +440,6 @@
        (add-status-bar)
        (join-rows)))
 
-(comment 
-  (safe-len (editor-update-rows)))
-
 (defn editor-refresh-screen [& opts]
   (update-screen-sizes)
   (unless (index-of :modal opts) (editor-scroll))
@@ -802,35 +799,6 @@
            :cx (- x (editor-state :coloffset)))
     (editor-refresh-screen)))
 
-(comment 
-  (do (move-to-match)
-      editor-state) )
-
-(comment
-  (reset-editor-state)
-  (load-file "LICENSE")
-  (find-all "ar")
-
-  #Testing move-to-match
-  (var x 0)
-  (var y 0)
-  
-  (do (def all-results (editor-state :search-results))
-      (def filter-fn (fn [[y x]] (or (> y (abs-y)) (and (= y (abs-y)) (> x (abs-x))))))
-      (def next-results (sort (filter filter-fn all-results)))
-      (set y (first (or (first next-results) (first all-results))))
-      (set x (last (or (first next-results) (first all-results))))
-      (print y)
-      (print x))
-  (do (edset :rowoffset (max 0 (- y (math/trunc (/ (editor-state :screenrows) 2))))
-             :coloffset (max 0 (+ 10 (- x (editor-state :screencols)))))
-      (edset :cy (- y (editor-state :rowoffset))
-             :cx (- x (editor-state :coloffset)))
-      [(editor-state :cy) (editor-state :cx)])
-
-  (edset :cx 0 :cy 0)
-  )
-
 # BUG: Find currently skips first apparent result in file?
 # TODO: Implement case sensitive vs insensitive search
 # TODO: Implement find and replace
@@ -871,22 +839,6 @@
     (if final-finds
       (edset :search-results final-finds)
       (send-status-msg "No matches found."))))
-
-(comment
-  # Testing find-all
-  (reset-editor-state)
-  (load-file "LICENSE")
-  (def search-str "ar")
-
-  (def finds (map | (string/find-all search-str $) (editor-state :erows)))
-  (def i-finds @[])
-  (def _ (each i finds (array/push i-finds [(index-of i finds) i])))
-  i-finds
-  (def filtered (filter | (not (empty? (last $))) i-finds))
-  (def distribute (fn [[y arr]] (map | (array y $) arr)))
-  (def final-finds (partition 2 (flatten (map distribute filtered))))
-  (edset :search-results final-finds)
-  editor-state)
 
 (varfn find-in-text-modal []
        (modal "Search: " :input |(do (find-all (editor-state :modalinput))
