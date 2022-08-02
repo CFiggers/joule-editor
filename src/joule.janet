@@ -98,7 +98,7 @@
   (assert (>= at 0) "Can't string/cut: `at` is negative")
   (assert (>= until at) "Can't string/cut: `until` is less than `at`")
   (if (not until)
-    (string
+   (string 
      (string/slice str 0 at)
      (string/slice str (- at (length str))))))
 
@@ -622,7 +622,7 @@
 (var modal-cancel false)
 
 (defn delete-char-modal [direction]
-  (let [mx (- (abs-x) (safe-len (editor-state :modalmsg)) 3)]
+  (let [mx (- (abs-x) (safe-len (editor-state :modalmsg)) 4)]
     (when (= direction :backspace)
       (move-cursor :left))
     (update-minput | (string/cut $ mx))))
