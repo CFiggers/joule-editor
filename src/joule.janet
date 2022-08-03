@@ -31,7 +31,7 @@
 
 ### Data ###
 
-(var quit false)
+(var j-quit false)
 
 # TODO: Implement multiple "tabs"/buffers open simultaneously
 
@@ -535,6 +535,13 @@
       (update-erow (abs-y) |(string $ next-line))
       (edup :erows |(array/remove $ (inc (abs-y)))))))
 
+(defn enter-debugger []
+  (disable-raw-mode)
+  (file/write stdout "\e[H")
+  (file/flush stdout)
+  (debugger (fiber/current))
+  (enable-raw-mode))
+
 # Declaring out of order to allow type checking to pass
 (varfn save-file [])
 (varfn save-file-as [])
@@ -554,6 +561,7 @@
       (ctrl-key (chr "l")) (load-file-modal)
       (ctrl-key (chr "s")) (save-file) 
       (ctrl-key (chr "a")) (save-file-as) 
+      (ctrl-key (chr "d")) (enter-debugger) 
       (ctrl-key (chr "w")) (close-file :close)
       (ctrl-key (chr "f")) (find-in-text-modal)
       (ctrl-key (chr "z")) (break) # TODO: Undo in normal typing
@@ -694,6 +702,7 @@
       (ctrl-key (chr "n")) (break) 
       (ctrl-key (chr "l")) (break) 
       (ctrl-key (chr "s")) (break) 
+      (ctrl-key (chr "d")) (enter-debugger)
       (ctrl-key (chr "w")) (break) 
       (ctrl-key (chr "f")) (break) 
       (ctrl-key (chr "z")) (break) # TODO: Undo in modals 
@@ -850,6 +859,7 @@
                          (editor-refresh-screen))]
     (case (get keymap key key)
       (ctrl-key (chr "q")) (exit-search)
+      (ctrl-key (chr "d")) (enter-debugger)
 
       :enter (do (move-to-match)
                  (find-next))
@@ -907,7 +917,7 @@
 
 (varfn close-file [kind]
   (let [callback (case kind 
-                   :quit |(set quit true)
+                   :quit |(set j-quit true)
                    :close |(do (reset-editor-state)
                                (send-status-msg "File closed.")))]
     (confirm-lose-changes callback)))
@@ -919,7 +929,7 @@
   (when (= (os/which) :linux) 
     (prin "\e[?1049h]"))
   (enable-raw-mode)
-  (reset-editor-state)
+  (reset-editor-state) 
   (editor-open args))
 
 (defn exit []
@@ -935,7 +945,7 @@
 (defn main [& args]
   (init args)
 
-  (while (not quit)
+  (while (not j-quit)
     (editor-refresh-screen)
     (editor-process-keypress))
 
