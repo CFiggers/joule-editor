@@ -4,7 +4,7 @@
 ### Definitions ###
 
 (def version
-  "0.0.2")
+  "0.0.3")
 
 (def keymap
   {9 :tab
@@ -203,6 +203,12 @@
 # TODO: Implement jump to line number
 # TODO: Implement jump to start/end of file
 
+(defn jump-to [y x]
+  (edset :rowoffset (max 0 (- y (math/trunc (/ (editor-state :screenrows) 2))))
+         :coloffset (max 0 (+ 10 (- x (editor-state :screencols)))))
+  (edset :cy (- y (editor-state :rowoffset))
+         :cx (- x (editor-state :coloffset))))
+
 (defn move-viewport [direction]
   (case direction
     :up (edup :rowoffset dec)
@@ -312,7 +318,7 @@
                  :main (some :value)}))
 
 (defn search-peg []
-  (let [search-str (if (and (editor-state :tempx) (editor-state :modalinput))
+  (let [search-str (if (and (editor-state :search-active) (editor-state :modalinput))
                      ~(replace (<- ,(editor-state :modalinput)) ,| (bg-color $ :dull-blue)) 
                      -1)]
     ~{:search ,search-str
@@ -545,9 +551,11 @@
 # Declaring out of order to allow type checking to pass
 (varfn save-file [])
 (varfn save-file-as [])
+
 (varfn load-file-modal [])
 (varfn close-file [])
 (varfn find-in-text-modal [])
+(varfn jump-to-modal [])
 
 (defn editor-process-keypress [&opt in-key]
   (let [key (or in-key (read-key)) #Blocks here waiting on keystroke
@@ -564,6 +572,7 @@
       (ctrl-key (chr "d")) (enter-debugger) 
       (ctrl-key (chr "w")) (close-file :close)
       (ctrl-key (chr "f")) (find-in-text-modal)
+      (ctrl-key (chr "g")) (jump-to-modal)
       (ctrl-key (chr "z")) (break) # TODO: Undo in normal typing
       (ctrl-key (chr "y")) (break) # TODO: Redo in normal typing
 
@@ -834,10 +843,7 @@
         filter-fn (fn [[y x]] (or (> y (abs-y)) (and (= y (abs-y)) (> x (abs-x)))))
         next-results (sort (filter filter-fn all-results))
         [y x] (or (first next-results) (first all-results))]
-    (edset :rowoffset (max 0 (- y (math/trunc (/ (editor-state :screenrows) 2))))
-           :coloffset (max 0 (+ 10 (- x (editor-state :screencols)))))
-    (edset :cy (- y (editor-state :rowoffset))
-           :cx (- x (editor-state :coloffset)))
+    (jump-to y x)
     (editor-refresh-screen)))
 
 # TODO: Implement case sensitive vs insensitive search
@@ -883,16 +889,26 @@
       (send-status-msg "No matches found."))))
 
 (varfn find-in-text-modal []
+       (edset :search-active true)
        (set-temp-pos)
        (set modal-rethome true)
        (modal "Search: " :input | (do (find-all (editor-state :modalinput))
                                       (if (< 0 (safe-len (editor-state :search-results)))
                                         (find-next true)
                                         (do (return-to-temp-pos)
-                                            (clear-temp-pos)
+                                            (clear-temp-pos) 
                                             (set modal-rethome false)
                                             (edset :search-active nil)
                                             (send-status-msg "No matches found."))))))
+
+### Misc Modals ### 
+
+(varfn jump-to-modal [] 
+  (set-temp-pos)     
+  (modal "Go where? (Line #)" :input | (if-let [n (scan-number (editor-state :modalinput))]
+                                         (jump-to (dec (math/floor n)) 0)
+                                         (do (return-to-temp-pos)
+                                             (send-status-msg "Try again.")))))
 
 ### Init and main ###
 
