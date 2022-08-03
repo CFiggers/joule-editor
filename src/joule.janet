@@ -853,19 +853,21 @@
     (move-to-match)) 
 
   (let [key (read-key)
-        exit-search |(do (return-to-temp-pos)
-                         (clear-temp-pos)
-                         (editor-refresh-screen))]
+        exit-search |(do (clear-temp-pos)
+                         (edset :search-active nil))
+        cancel-search |(do (return-to-temp-pos)
+                           (exit-search)
+                           (editor-refresh-screen))]
     (case (get keymap key key)
-      (ctrl-key (chr "q")) (exit-search)
+      (ctrl-key (chr "q")) (cancel-search)
       (ctrl-key (chr "d")) (enter-debugger)
 
       :enter (do (move-to-match)
                  (find-next))
-      :esc (exit-search)
+      :esc (cancel-search)
       
       # Otherwise
-      (do (clear-temp-pos)
+      (do (exit-search)
           # Process keypress normally
           (editor-process-keypress key)))))
 
@@ -888,6 +890,8 @@
                                         (find-next true)
                                         (do (return-to-temp-pos)
                                             (clear-temp-pos)
+                                            (set modal-rethome false)
+                                            (edset :search-active nil)
                                             (send-status-msg "No matches found."))))))
 
 ### Init and main ###
