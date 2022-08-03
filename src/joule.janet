@@ -4,7 +4,7 @@
 ### Definitions ###
 
 (def version
-  "0.0.1")
+  "0.0.2")
 
 (def keymap
   {9 :tab
@@ -31,7 +31,7 @@
 
 ### Data ###
 
-(var quit false)
+(var j-quit false)
 
 # TODO: Implement multiple "tabs"/buffers open simultaneously
 
@@ -147,22 +147,22 @@
              :brown "38;2;206;145;120"
              :cream-green "38;2;181;206;168"
              :powder-blue "38;2;156;220;254"
-             :drab-green "38;2;106;153;85"
+             :drab-green "38;2;106;153;85" 
              :default "0;39")] 
-    (string "\e[" color-code "m" text "\e[0m")
+    (string "\e[" color-code "m" text "\e[0;39m")
     text))
 
-(defn bg-color
-  
+(defn bg-color 
   [text color-key]
   (if-let [color-code
            (case color-key
-             :black 0 :red 1
-             :green 2 :yellow 3
-             :blue 4 :magenta 5
-             :cyan 6 :white 7
-             :default 9)]
-    (string "\e[0;4" color-code "m" text "\e[0m")
+             :black "0;40" :red "0;41"
+             :green "0;42" :yellow "0;43"
+             :blue "0;44" :magenta "0;45"
+             :cyan "0;46" :white "0;47"
+             :default "0;49"
+             :dull-blue "48;2;38;79;120")]
+    (string "\e[" color-code "m" text "\e[0;49m")
     text))
 
 ### Editor State Functions ###
@@ -295,7 +295,7 @@
 
 # TODO: Correctly color strings across line breaks
 # TODO: Janet Long strings w/ ``` syntax
-# TODO: Extensible syntax highlighting scheme
+# TODO: Extensible syntax highlighting schemes for different languages
 
 (def highlight-rules
   (peg/compile ~{:comment (replace (<- (* "#" (any 1))) ,|(color $ :drab-green))
@@ -311,11 +311,28 @@
                  :value (+ :comment :string :numbers :keyword :special :symbol :ws :else)
                  :main (some :value)}))
 
+(defn search-peg []
+  (let [search-str (if (and (editor-state :tempx) (editor-state :modalinput))
+                     ~(replace (<- ,(editor-state :modalinput)) ,| (bg-color $ :dull-blue)) 
+                     -1)]
+    ~{:search ,search-str
+      :else (<- 1) 
+      :main (some (+ :search :else))}))
+
+(defn insert-search-highlight [str peg]
+  (cond 
+    (= str "") "" 
+    (peg/match peg str) (string/join (peg/match peg str))
+    str))
+
 (defn insert-highlight [str]
   (if (= str "") "" 
     (string/join (peg/match highlight-rules str))))
 
 ### Output ###
+
+(defn add-search-hl [rows]
+  (map |(insert-search-highlight $ (search-peg)) rows))
 
 (defn add-syntax-hl [rows]
   (map insert-highlight rows))
@@ -438,6 +455,7 @@
        (apply-h-scroll)
        (trim-to-width)
        (add-syntax-hl)
+       (add-search-hl)
        (fill-empty-rows)
        (add-welcome-message)
        (apply-margin)
@@ -517,6 +535,13 @@
       (update-erow (abs-y) |(string $ next-line))
       (edup :erows |(array/remove $ (inc (abs-y)))))))
 
+(defn enter-debugger []
+  (disable-raw-mode)
+  (file/write stdout "\e[H")
+  (file/flush stdout)
+  (debugger (fiber/current))
+  (enable-raw-mode))
+
 # Declaring out of order to allow type checking to pass
 (varfn save-file [])
 (varfn save-file-as [])
@@ -536,6 +561,7 @@
       (ctrl-key (chr "l")) (load-file-modal)
       (ctrl-key (chr "s")) (save-file) 
       (ctrl-key (chr "a")) (save-file-as) 
+      (ctrl-key (chr "d")) (enter-debugger) 
       (ctrl-key (chr "w")) (close-file :close)
       (ctrl-key (chr "f")) (find-in-text-modal)
       (ctrl-key (chr "z")) (break) # TODO: Undo in normal typing
@@ -590,6 +616,7 @@
       :enter (carriage-return)
 
       # TODO: Escape
+      :esc (break)
 
       :backspace (cond
                    #On top line and home row of file; do nothing
@@ -623,11 +650,32 @@
 
 (var modal-cancel false)
 
+(var modal-rethome false)
+
 (defn delete-char-modal [direction]
   (let [mx (- (abs-x) (safe-len (editor-state :modalmsg)) 4)]
     (when (= direction :backspace)
       (move-cursor :left))
     (update-minput | (string/cut $ mx))))
+
+(defn set-temp-pos []
+  (edset :tempx (editor-state :cx)
+         :tempy (editor-state :cy)
+         :temp-rowoffset (editor-state :rowoffset)
+         :temp-coloffset (editor-state :coloffset)))
+
+(defn return-to-temp-pos []
+  (edset :cx (editor-state :tempx)
+         :cy (editor-state :tempy)
+         :rowoffset (editor-state :temp-rowoffset)
+         :coloffset (editor-state :temp-coloffset)))
+
+(defn clear-temp-pos []
+  (edset :tempx nil
+         :tempy nil
+         :temp-rowoffset nil
+         :temp-coloffset nil
+         :search-results nil))
 
 (defn modal-home []
   (+ (safe-len (editor-state :modalmsg)) 3))
@@ -655,6 +703,7 @@
       (ctrl-key (chr "n")) (break) 
       (ctrl-key (chr "l")) (break) 
       (ctrl-key (chr "s")) (break) 
+      (ctrl-key (chr "d")) (enter-debugger)
       (ctrl-key (chr "w")) (break) 
       (ctrl-key (chr "f")) (break) 
       (ctrl-key (chr "z")) (break) # TODO: Undo in modals 
@@ -706,8 +755,7 @@
       
       (modal-handle-typing key))))
 
-(defn modal [message kind callback &named modalendput return-home]
-  (default return-home true)
+(defn modal [message kind callback &named modalendput]
   (let [ret-x (editor-state :cx)
         ret-y (editor-state :cy)]
 
@@ -729,13 +777,13 @@
 
     (unless modal-cancel (callback))
 
-    # Clean up modal-related state
+    #Clean up modal-related state
 
     (edset :modalmsg ""
            :modalinput (or modalendput ""))
-    (when return-home
-      (edset :cx ret-x
-             :cy ret-y))))
+    (when modal-rethome
+      (return-to-temp-pos))
+    (clear-temp-pos)))
 
 ### File I/O ###
 
@@ -779,19 +827,6 @@
 
 ### Search ###
 
-(defn init-find []
-  (edset :tempx (editor-state :cx)
-         :tempy (editor-state :cy)
-         :temp-rowoffset (editor-state :rowoffset)
-         :temp-coloffset (editor-state :coloffset)))
-
-(defn exit-find []
-  (edset :tempx nil
-         :tempy nil
-         :temp-rowoffset nil
-         :temp-coloffset nil
-         :search-results nil))
-
 (defn move-to-match []
   (assert (> (safe-len (editor-state :search-results)) 0)) 
   #Search rest of current row
@@ -805,33 +840,32 @@
            :cx (- x (editor-state :coloffset)))
     (editor-refresh-screen)))
 
-# BUG: Find currently skips first apparent result in file?
 # TODO: Implement case sensitive vs insensitive search
 # TODO: Implement find and replace
 # TODO: Implement Regex search and Regex replace
-# TODO: Incremental highlighting of search term while typing
 # TODO: Jump to previous result in addition to next
 
 (defn find-next [&opt init]
   # Record current cursor and window position to return later
   (when init
-    (init-find)
+    (set modal-rethome false)
+    (return-to-temp-pos)
     (move-to-match)) 
 
-  (let [key (read-key)]
+  (let [key (read-key)
+        exit-search |(do (return-to-temp-pos)
+                         (clear-temp-pos)
+                         (editor-refresh-screen))]
     (case (get keymap key key)
+      (ctrl-key (chr "q")) (exit-search)
+      (ctrl-key (chr "d")) (enter-debugger)
+
       :enter (do (move-to-match)
                  (find-next))
-      :esc # Return to recorded cursor and window position 
-      (do (edset :cx (editor-state :tempx)
-                 :cy (editor-state :tempy)
-                 :rowoffset (editor-state :temp-rowoffset)
-                 :coloffset (editor-state :temp-coloffset))
-          (exit-find)
-          (editor-refresh-screen))
+      :esc (exit-search)
       
       # Otherwise
-      (do (exit-find)
+      (do (clear-temp-pos)
           # Process keypress normally
           (editor-process-keypress key)))))
 
@@ -847,10 +881,14 @@
       (send-status-msg "No matches found."))))
 
 (varfn find-in-text-modal []
-       (modal "Search: " :input |(do (find-all (editor-state :modalinput))
-                                      (when (editor-state :search-results)
-                                        (find-next true)))
-              :return-home false))
+       (set-temp-pos)
+       (set modal-rethome true)
+       (modal "Search: " :input | (do (find-all (editor-state :modalinput))
+                                      (if (< 0 (safe-len (editor-state :search-results)))
+                                        (find-next true)
+                                        (do (return-to-temp-pos)
+                                            (clear-temp-pos)
+                                            (send-status-msg "No matches found."))))))
 
 ### Init and main ###
 
@@ -878,7 +916,7 @@
 
 (varfn close-file [kind]
   (let [callback (case kind 
-                   :quit |(set quit true)
+                   :quit |(set j-quit true)
                    :close |(do (reset-editor-state)
                                (send-status-msg "File closed.")))]
     (confirm-lose-changes callback)))
@@ -890,7 +928,7 @@
   (when (= (os/which) :linux) 
     (prin "\e[?1049h]"))
   (enable-raw-mode)
-  (reset-editor-state)
+  (reset-editor-state) 
   (editor-open args))
 
 (defn exit []
@@ -906,7 +944,7 @@
 (defn main [& args]
   (init args)
 
-  (while (not quit)
+  (while (not j-quit)
     (editor-refresh-screen)
     (editor-process-keypress))
 
