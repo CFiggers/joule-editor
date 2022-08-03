@@ -841,6 +841,7 @@
   # Record current cursor and window position to return later
   (when init
     (set modal-rethome false)
+    (return-to-temp-pos)
     (move-to-match)) 
 
   (let [key (read-key)
