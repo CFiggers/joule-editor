@@ -616,6 +616,7 @@
       :enter (carriage-return)
 
       # TODO: Escape
+      :esc (break)
 
       :backspace (cond
                    #On top line and home row of file; do nothing
@@ -839,11 +840,9 @@
            :cx (- x (editor-state :coloffset)))
     (editor-refresh-screen)))
 
-# BUG: Find currently skips first apparent result in file?
 # TODO: Implement case sensitive vs insensitive search
 # TODO: Implement find and replace
 # TODO: Implement Regex search and Regex replace
-# TODO: Incremental highlighting of search term while typing
 # TODO: Jump to previous result in addition to next
 
 (defn find-next [&opt init]
