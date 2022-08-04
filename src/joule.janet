@@ -239,27 +239,24 @@
       (move-viewport :end)
       (move-viewport :home))
     (edset :cx (max-x (abs-y)))))
-
-(def delim
-  ~{:delim (+ " " ";" ":")
-    :main :delim})
-
-(defn seek-delim []) 
   
 (varfn wrap-to-end-of-prev-line [])
 (varfn wrap-to-start-of-next-line [])
 
-(defn next-word []
-  (let [line (get-in editor-state [:erows (abs-y)])
-        s (string/slice line (abs-x))
-        ls (safe-len (take-while |(= $ 32) (string/bytes s)))]
-    (if (= s "")
-      (do (wrap-to-start-of-next-line)
-          (next-word))
-      (edup :cx |(+ $ (string/find " " s ls))))))
-
-(defn prev-word []
-  )
+(defn move-word [dir]
+  (let [[f df] (case dir :left [string/reverse -] :right [identity +])
+        mf (case dir :left wrap-to-end-of-prev-line
+                     :right wrap-to-start-of-next-line)
+        line (f (get-in editor-state [:erows (abs-y)]))
+        x (case dir :left (- (max-x (abs-y)) (abs-x)) :right (abs-x))
+        s (string/slice line x)
+        ls (safe-len (take-while |(= $ 32) (string/bytes s)))
+        d (string/find " " s ls)]
+    (cond 
+      (= (string/trim s) "") (do (mf)
+                   (move-word dir))
+      (nil? d) (move-cursor-end)
+      (edup :cx |(df $ d)))))
 
 (defn move-cursor [direction]
   (case direction 
@@ -269,8 +266,8 @@
     :right (edup :cx inc)
     :home (move-cursor-home)
     :end (move-cursor-end)
-    :word-left (prev-word)
-    :word-right (next-word)))
+    :word-left (move-word :left)
+    :word-right (move-word :right)))
 
 (defn editor-scroll []
   (let [cx (editor-state :cx)
@@ -634,7 +631,7 @@
                      (update-x-memory cx))
       
       # TODO: Ctrl + arrows
-      :ctrlleftarrow (break)
+      :ctrlleftarrow (move-cursor :word-left)
       :ctrlrightarrow (move-cursor :word-right)
       :ctrluparrow (break)
       :ctrldownarrow (break)
