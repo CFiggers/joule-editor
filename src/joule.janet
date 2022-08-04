@@ -27,7 +27,8 @@
    1013 :shiftleftarrow
    1014 :shiftrightarrow
    1015 :shiftuparrow
-   1016 :shiftdownarrow})
+   1016 :shiftdownarrow
+   1017 :shiftdel})
 
 ### Data ###
 
@@ -546,6 +547,14 @@
     (move-cursor :left))
   (update-erow (abs-y) | (string/cut $ (abs-x))))
 
+(defn kill-row [y]
+  (edup :erows |(array/remove $ y)))
+
+(defn delete-row []
+  (kill-row (abs-y))
+  (move-cursor :home)
+  (edup :dirty inc))
+
 (defn backspace-back-to-prev-line []
   (let [current-line (get-in editor-state [:erows (abs-y)])
         leaving-y (abs-y)]
@@ -642,6 +651,8 @@
       :shiftrightarrow (break)
       :shiftuparrow (break)
       :shiftdownarrow (break)
+
+      :shiftdel (delete-row)
       
       :enter (carriage-return)
 
@@ -777,6 +788,8 @@
       :shiftrightarrow (break)
       :shiftuparrow (break)
       :shiftdownarrow (break)
+
+      :shiftdel (break)
 
       :home (move-cursor-modal :home)
       :end (move-cursor-modal :end)
