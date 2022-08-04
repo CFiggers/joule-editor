@@ -240,14 +240,29 @@
       (move-viewport :home))
     (edset :cx (max-x (abs-y)))))
 
+(def delim
+  ~{:delim (+ " " ";" ":")
+    :main :delim})
+
+(defn seek-delim [] 
+  )
+
+(defn next-word [dir]
+  )
+
+(defn prev-word []
+  )
+
 (defn move-cursor [direction]
-  (case direction 
+  (case di7rection 
     :up (edup :cy dec)
     :down (edup :cy inc)
     :left (edup :cx dec)
     :right (edup :cx inc)
     :home (move-cursor-home)
-    :end (move-cursor-end)))
+    :end (move-cursor-end)
+    :word-left (prev-word)
+    :word-right (next-word)))
 
 (defn editor-scroll []
   (let [cx (editor-state :cx)
