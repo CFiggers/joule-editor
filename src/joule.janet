@@ -246,14 +246,15 @@
 
 (defn move-word [dir] 
   (if (and (= dir :left) (= (editor-state :cx) 0) (= (editor-state :cy) 0)) (break))
-  (let [left (case dir :left true :right false)
+  (let [delims " .-_([{}])'\"\\/"
+        left (case dir :left true :right false)
         [f df] (if left [string/reverse -] [identity +])
         mf (if left wrap-to-end-of-prev-line wrap-to-start-of-next-line)
         line (f (get-in editor-state [:erows (abs-y)]))
         x (if left (- (max-x (abs-y)) (abs-x)) (abs-x))
         s (string/slice line x)
-        ls (safe-len (take-while |(= $ 32) (string/bytes s)))
-        d (string/find " " s ls)]
+        ls (safe-len (take-while |(index-of $ (string/bytes delims)) (string/bytes s)))
+        d (peg/find ~(set ,delims) s ls)]
     (cond 
       (= (string/trim s) "") (do (mf)
                                  (move-word dir))
@@ -561,7 +562,7 @@
     (move-cursor :up)
     (move-cursor :end) 
     # drop line being left
-    (edup :erows |(array/remove $ leaving-y))
+    (kill-row leaving-y)
     # append current-line to new line
     (update-erow (abs-y) | (string $ current-line))))
 
