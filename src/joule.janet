@@ -244,17 +244,25 @@
   ~{:delim (+ " " ";" ":")
     :main :delim})
 
-(defn seek-delim [] 
-  )
+(defn seek-delim []) 
+  
+(varfn wrap-to-end-of-prev-line [])
+(varfn wrap-to-start-of-next-line [])
 
-(defn next-word [dir]
-  )
+(defn next-word []
+  (let [line (get-in editor-state [:erows (abs-y)])
+        s (string/slice line (abs-x))
+        ls (safe-len (take-while |(= $ 32) (string/bytes s)))]
+    (if (= s "")
+      (do (wrap-to-start-of-next-line)
+          (next-word))
+      (edup :cx |(+ $ (string/find " " s ls))))))
 
 (defn prev-word []
   )
 
 (defn move-cursor [direction]
-  (case di7rection 
+  (case direction 
     :up (edup :cy dec)
     :down (edup :cy inc)
     :left (edup :cx dec)
@@ -304,11 +312,11 @@
   (when (> cx (editor-state :rememberx))
     (edset :rememberx cx)))
 
-(defn wrap-to-end-of-prev-line []
+(varfn wrap-to-end-of-prev-line []
   (move-cursor :up)
   (move-cursor :end))
 
-(defn wrap-to-start-of-next-line []
+(varfn wrap-to-start-of-next-line []
   (move-cursor :down)
   (move-cursor :home))
 
@@ -627,7 +635,7 @@
       
       # TODO: Ctrl + arrows
       :ctrlleftarrow (break)
-      :ctrlrightarrow (break)
+      :ctrlrightarrow (move-cursor :word-right)
       :ctrluparrow (break)
       :ctrldownarrow (break)
       
