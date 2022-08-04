@@ -243,19 +243,20 @@
 (varfn wrap-to-end-of-prev-line [])
 (varfn wrap-to-start-of-next-line [])
 
-(defn move-word [dir]
-  (let [[f df] (case dir :left [string/reverse -] :right [identity +])
-        mf (case dir :left wrap-to-end-of-prev-line
-                     :right wrap-to-start-of-next-line)
+(defn move-word [dir] 
+  (if (and (= dir :left) (= (editor-state :cx) 0) (= (editor-state :cy) 0)) (break))
+  (let [left (case dir :left true :right false)
+        [f df] (if left [string/reverse -] [identity +])
+        mf (if left wrap-to-end-of-prev-line wrap-to-start-of-next-line)
         line (f (get-in editor-state [:erows (abs-y)]))
-        x (case dir :left (- (max-x (abs-y)) (abs-x)) :right (abs-x))
+        x (if left (- (max-x (abs-y)) (abs-x)) (abs-x))
         s (string/slice line x)
         ls (safe-len (take-while |(= $ 32) (string/bytes s)))
         d (string/find " " s ls)]
     (cond 
       (= (string/trim s) "") (do (mf)
-                   (move-word dir))
-      (nil? d) (move-cursor-end)
+                                 (move-word dir))
+      (nil? d) (if left (move-cursor-home) (move-cursor-end))
       (edup :cx |(df $ d)))))
 
 (defn move-cursor [direction]
@@ -679,7 +680,7 @@
 
 (var modal-cancel false)
 
-(var modal-rethome false)
+(var modal-rethome true)
 
 (defn delete-char-modal [direction]
   (let [mx (- (abs-x) (safe-len (editor-state :modalmsg)) 4)]
@@ -787,6 +788,8 @@
 (defn modal [message kind callback &named modalendput]
   (let [ret-x (editor-state :cx)
         ret-y (editor-state :cy)]
+    (when modal-rethome
+      (set-temp-pos))
 
     #Init modal-related state
     (edset :statusmsg ""
@@ -811,8 +814,10 @@
     (edset :modalmsg ""
            :modalinput (or modalendput ""))
     (when modal-rethome
-      (return-to-temp-pos))
-    (clear-temp-pos)))
+      (return-to-temp-pos)
+      (clear-temp-pos))
+    (unless modal-rethome
+      (set modal-rethome true))))
 
 ### File I/O ###
 
@@ -843,7 +848,7 @@
            (edset :dirty 0)
            (send-status-msg (string "File saved!"))))
 
-(varfn load-file-modal []
+(varfn load-file-modal [] 
   (modal "Load what file?" :input |(load-file (editor-state :modalinput))) 
   (if modal-cancel
     (send-status-msg "Cancelled.")
@@ -888,6 +893,8 @@
       (ctrl-key (chr "q")) (cancel-search)
       (ctrl-key (chr "d")) (enter-debugger)
 
+      :tab (do (move-to-match)
+                 (find-next))
       :enter (do (move-to-match)
                  (find-next))
       :esc (cancel-search)
@@ -909,9 +916,7 @@
       (send-status-msg "No matches found."))))
 
 (varfn find-in-text-modal []
-       (edset :search-active true)
-       (set-temp-pos)
-       (set modal-rethome true)
+       (edset :search-active true) 
        (modal "Search: " :input | (do (find-all (editor-state :modalinput))
                                       (if (< 0 (safe-len (editor-state :search-results)))
                                         (find-next true)
@@ -924,11 +929,11 @@
 ### Misc Modals ### 
 
 (varfn jump-to-modal [] 
-  (set-temp-pos)     
-  (modal "Go where? (Line #)" :input | (if-let [n (scan-number (editor-state :modalinput))]
-                                         (jump-to (dec (math/floor n)) 0)
-                                         (do (return-to-temp-pos)
-                                             (send-status-msg "Try again.")))))
+  (modal "Go where? (Line #)" :input
+         | (if-let [n (scan-number (editor-state :modalinput))]
+             (jump-to (dec (math/floor n)) 0)
+             (do (return-to-temp-pos)
+                 (send-status-msg "Try again.")))))
 
 ### Init and main ###
 
