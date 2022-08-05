@@ -55,6 +55,9 @@
             :statusmsgtime 0
             :modalmsg ""
             :modalinput ""
+            :select-from @{:x 0 :y 0}
+            :select-to @{:x 0 :y 0}
+            :clipboard @["Hello, there"]
             :screenrows (- ((get-window-size) :rows) 2)
             :screencols ((get-window-size) :cols)
             :userconfig @{:scrollpadding 5
@@ -510,6 +513,31 @@
 
   (file/write stdout abuf)
   (file/flush stdout))
+### Clipboard ###5
+
+(def clear-clipboard []
+  (edset :clipboard @[]))
+
+(defn clip-copy-single [kind]
+  (let [[from-x from-y] (values (editor-state :select-from))
+        [to-x to-y] (values (editor-state :select-to))]
+    ))
+
+(defn clip-copy-multi [kind]
+  (let [[from-x from-y] (values (editor-state :select-from))
+        [to-x to-y] (values (editor-state :select-to))]
+    ))
+
+# Kind can be :copy or :cut
+(defn copy-to-clipboard [kind]
+  (clear-clipboard)
+  (if (= ((editor-state :select-from) :y) 
+         ((editor-state :select-to) :y))
+    (clip-copy-single kind)
+    (clip-copy-multi kind)))
+
+(defn paste-clipboard []
+  (map editor-handle-typing (string/bytes (editor-state :clipboard))))
 
 ### Input ###
 
@@ -606,6 +634,10 @@
       (ctrl-key (chr "g")) (jump-to-modal)
       (ctrl-key (chr "z")) (break) # TODO: Undo in normal typing
       (ctrl-key (chr "y")) (break) # TODO: Redo in normal typing
+      
+      (ctrl-key (chr "c")) (copy-to-clipboard :copy)
+      (ctrl-key (chr "x")) (copy-to-clipboard :cut)
+      (ctrl-key (chr "v")) (paste-clipboard)
 
       # If on home page of file
       :pageup (if (= 0 v-offset)
@@ -641,9 +673,10 @@
       :downarrow (do (move-cursor-with-mem :down)
                      (update-x-memory cx))
       
-      # TODO: Ctrl + arrows
       :ctrlleftarrow (move-cursor :word-left)
       :ctrlrightarrow (move-cursor :word-right)
+      
+      # TODO: Multiple cursors?
       :ctrluparrow (break)
       :ctrldownarrow (break)
       
@@ -657,7 +690,7 @@
       
       :enter (carriage-return)
 
-      # TODO: Escape
+      # TODO: Escape-- cancel selection
       :esc (break)
 
       :backspace (cond
