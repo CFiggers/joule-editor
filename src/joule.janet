@@ -518,14 +518,20 @@
 (def clear-clipboard []
   (edset :clipboard @[]))
 
-(defn clip-copy-single [kind]
-  (let [[from-x from-y] (values (editor-state :select-from))
-        [to-x to-y] (values (editor-state :select-to))]
-    ))
+(defn clip-copy-single [kind y from-x to-x]
+  )
 
 (defn clip-copy-multi [kind]
   (let [[from-x from-y] (values (editor-state :select-from))
         [to-x to-y] (values (editor-state :select-to))]
+    # Copy first line-- might be partial
+    (clip-copy-single kind from-y from-x (max-x from-y))
+    
+    # Copy intermediate lines 
+
+
+    # Copy last line-- might be partial
+    (clip-copy-single kind from-y from-x (max-x to-y))
     ))
 
 # Kind can be :copy or :cut
