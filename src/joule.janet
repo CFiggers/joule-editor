@@ -433,6 +433,8 @@
                   "Ctrl + s                 save"
                   "Ctrl + a              save as"
                   "Ctrl + f               search"
+                  "Ctrl + c                 copy"
+                  "Ctrl + p                paste"
                   "Ctrl + n       toggle numbers"])
   (if (deep= @[] (flatten (editor-state :erows)))
     (let [r (editor-state :screenrows)
@@ -982,39 +984,37 @@
       
       (modal-handle-typing key))))
 
-(defn modal [message kind callback &named modalendput]
-  (let [ret-x (editor-state :cx)
-        ret-y (editor-state :cy)]
-    (when modal-rethome
-      (set-temp-pos))
+(defn modal [message kind callback &named modalendput] 
+  (when modal-rethome
+    (set-temp-pos))
 
-    #Init modal-related state
-    (edset :statusmsg ""
-           :modalinput ""
-           :modalmsg message)
-    #Two separate calls to edset because (modal-home) depends
-    #on :modalmsg, so first call needs to commit before second
-    #runs correctly
-    (edset :cx (modal-home))
-    (edset :cy (+ (editor-state :screenrows) 2))
+  #Init modal-related state
+  (edset :statusmsg ""
+         :modalinput ""
+         :modalmsg message)
+  #Two separate calls to edset because (modal-home) depends
+  #on :modalmsg, so first call needs to commit before second
+  #runs correctly
+  (edset :cx (modal-home))
+  (edset :cy (+ (editor-state :screenrows) 2))
 
-    (set modal-active true)
-    (set modal-cancel false)
-    (while (and modal-active (not modal-cancel))
-      (editor-refresh-screen :modal)
-      (modal-process-keypress kind))
+  (set modal-active true)
+  (set modal-cancel false)
+  (while (and modal-active (not modal-cancel))
+    (editor-refresh-screen :modal)
+    (modal-process-keypress kind))
 
-    (unless modal-cancel (callback))
+  (unless modal-cancel (callback))
 
-    #Clean up modal-related state
+  #Clean up modal-related state
 
-    (edset :modalmsg ""
-           :modalinput (or modalendput ""))
-    (when modal-rethome
-      (return-to-temp-pos)
-      (clear-temp-pos))
-    (unless modal-rethome
-      (set modal-rethome true))))
+  (edset :modalmsg ""
+         :modalinput (or modalendput ""))
+  (when modal-rethome
+    (return-to-temp-pos)
+    (clear-temp-pos))
+  (unless modal-rethome
+          (set modal-rethome true)))
 
 ### File I/O ###
 
@@ -1139,21 +1139,20 @@
 (varfn confirm-lose-changes [callback]
   (let [dispatch 
         |(do (case (string/ascii-lower (editor-state :modalinput))
-                   "yes" (callback)
+                   "yes" (do (edset :dirty 0) (callback))
                    "n" (send-status-msg "Tip: Ctrl + s to Save.")
                    "no" (send-status-msg "Tip: Ctrl + s to Save.")
                    "s" (if (save-file)
-                         (callback)
+                         (do (edset :dirty 0) (callback))
                          (send-status-msg "Tip: Ctrl + s to Save."))
                    "save" (if (save-file)
-                            (callback)
+                            (do (edset :dirty 0) (callback))
                             (send-status-msg "Tip: Ctrl + s to Save.")))
              (send-status-msg "Tip: Ctrl + s to Save."))]
     (if (< 0 (editor-state :dirty))
       (do (modal "Are you sure? Unsaved changes will be lost. (yes/No/save)"
                  :input 
-                 dispatch)
-          (edset :dirty 0))
+                 dispatch))
       (callback))))
 
 (varfn close-file [kind]
@@ -1161,6 +1160,7 @@
                    :quit |(set j-quit true)
                    :close |(do (reset-editor-state)
                                (send-status-msg "File closed.")))]
+    (set modal-rethome false)
     (confirm-lose-changes callback)))
 
 (defn load-config [] 
