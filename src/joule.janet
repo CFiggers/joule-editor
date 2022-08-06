@@ -565,11 +565,15 @@
 (defn clear-clipboard []
   (edset :clipboard @[]))
 
+(varfn clear-selection [])
+
 (defn clip-copy-single [kind y from-x to-x]
   (let [line (string/slice (get-in editor-state [:erows y]) from-x to-x)]
     (edup :clipboard |(array/push $ line))
     (when (= kind :cut)
-      (update-erow y |(string/cut $ from-x to-x)))))
+      (update-erow y | (string/cut $ from-x (dec to-x)))
+      (clear-selection)
+      (edset :cx from-x))))
 
 (defn clip-copy-multi [kind]
   (let [[from-x from-y] (values (editor-state :select-from))
@@ -619,7 +623,7 @@
   (and (not (empty? (editor-state :select-from)))
        (not (empty? (editor-state :select-to)))))
 
-(defn clear-selection []
+(varfn clear-selection []
   (edset :select-from {}
          :select-to {}))
 
