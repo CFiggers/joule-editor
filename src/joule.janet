@@ -367,19 +367,10 @@
   (peg/compile
    ~{:esc-code (replace (<- (* "\e[" (some (+ :d ";")) "m"))
                         ,(fn [cap] [cap 0]))
-     :else (replace (<- (to "\e")) 
+     :else (replace (<- (to (+ "\e" -1))) 
                     ,(fn [cap] [cap (length cap)]))
      :main (some (+ :esc-code :else))}))
 
-(comment 
-  (peg/match esc-code-peg colorful-string)
-  
-(peg/match ~(<- (to "\e")) "    \e")
-
-  (peg/match ~(<- (some 1)) "111")
-
-  (peg/match ~(<- (* "\e" (some (+ :d ";")) "m")) "\e[0m")
-  (peg/match esc-code-peg "\e[0m"))
 
 (defn hl-x [str x]
   (let [str-peg (reverse (peg/match esc-code-peg str))] 
@@ -681,11 +672,6 @@
                :select-to @{:x (abs-x) :y (abs-y)})
         (grow-selection dir))))
 
-(comment 
-  (reset-editor-state)
-  (load-file "../LICENSE")
-  )
-
 ### Input ###
 
 (defn handle-out-of-bounds []
@@ -833,8 +819,12 @@
       :ctrldownarrow (break)
       
       # TODO: Shift + arrows
-      :shiftleftarrow (handle-selection :left)
-      :shiftrightarrow (handle-selection :right)
+      :shiftleftarrow (if (= (abs-x) 0)
+                        (break)
+                        (handle-selection :left))
+      :shiftrightarrow (if (= (abs-x) (rowlen (abs-y)))
+                        (break)
+                        (handle-selection :right))
       # TODO: Handling selection up and down
       :shiftuparrow (break)
       :shiftdownarrow (break)
