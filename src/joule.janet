@@ -513,13 +513,15 @@
 
   (file/write stdout abuf)
   (file/flush stdout))
-### Clipboard ###5
 
-(def clear-clipboard []
+### Clipboard ###
+
+(defn clear-clipboard []
   (edset :clipboard @[]))
 
 (defn clip-copy-single [kind y from-x to-x]
-  )
+  (let [line (string/slice (get-in editor-state [:erows y]) from-x to-x)]
+    (edup :clipboard |(array/push $ line))))
 
 (defn clip-copy-multi [kind]
   (let [[from-x from-y] (values (editor-state :select-from))
@@ -528,19 +530,27 @@
     (clip-copy-single kind from-y from-x (max-x from-y))
     
     # Copy intermediate lines 
-
+    (if (> (- to-y from-y) 1)
+       (let [lines (array/slice (editor-state :erows) 
+                               (inc from-y) 
+                               (dec to-y))]
+        (map (fn [l] (edup :clipboard (array/push l))) lines)))
 
     # Copy last line-- might be partial
-    (clip-copy-single kind from-y from-x (max-x to-y))
-    ))
+    (clip-copy-single kind to-y 0 to-x)))
+    
 
 # Kind can be :copy or :cut
 (defn copy-to-clipboard [kind]
   (clear-clipboard)
   (if (= ((editor-state :select-from) :y) 
          ((editor-state :select-to) :y))
-    (clip-copy-single kind)
+    (clip-copy-single kind (abs-y) 
+                      ((editor-state :select-from) :x)
+                      ((editor-state :select-to) :x))  
     (clip-copy-multi kind)))
+
+(varfn editor-handle-typing [])
 
 (defn paste-clipboard []
   (map editor-handle-typing (string/bytes (editor-state :clipboard))))
@@ -563,7 +573,7 @@
                        (editor-state :rowoffset))))
     (edset :cx (max-x (abs-y)))))
 
-(defn editor-handle-typing [key]
+(varfn editor-handle-typing [key]
   (handle-out-of-bounds)
   (let [char (string/format "%c" key)]
     (update-erow (abs-y) | (string/insert $ (abs-x) char))
