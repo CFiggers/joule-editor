@@ -55,8 +55,8 @@
             :statusmsgtime 0
             :modalmsg ""
             :modalinput ""
-            :select-from @{:x 0 :y 0}
-            :select-to @{:x 0 :y 0}
+            :select-from @{}
+            :select-to @{}
             :clipboard @["Hello, there"]
             :screenrows (- ((get-window-size) :rows) 2)
             :screencols ((get-window-size) :cols)
@@ -99,12 +99,12 @@
      (string/slice str (- (inc (- (length str) at))))))
 
 (defn string/cut [str at &opt until]
+  (default until at)
   (assert (>= at 0) "Can't string/cut: `at` is negative")
   (assert (>= until at) "Can't string/cut: `until` is less than `at`")
-  (if (not until)
-   (string 
-     (string/slice str 0 at)
-     (string/slice str (- at (length str))))))
+  (string
+   (string/slice str 0 at)
+   (string/slice str (- until (length str)))))
 
 (defn edset [& key-v]
   (assert (= 0 (% (safe-len key-v) 2)))
@@ -363,8 +363,60 @@
 
 ### Output ###
 
+(def esc-code-peg
+  (peg/compile
+   ~{:esc-code (replace (<- (* "\e[" (some (+ :d ";")) "m"))
+                        ,(fn [cap] [cap 0]))
+     :else (replace (<- (to "\e")) 
+                    ,(fn [cap] [cap (length cap)]))
+     :main (some (+ :esc-code :else))}))
+
+(comment 
+  (peg/match esc-code-peg colorful-string)
+  
+(peg/match ~(<- (to "\e")) "    \e")
+
+  (peg/match ~(<- (some 1)) "111")
+
+  (peg/match ~(<- (* "\e" (some (+ :d ";")) "m")) "\e[0m")
+  (peg/match esc-code-peg "\e[0m"))
+
+(defn hl-x [str x]
+  (let [str-peg (reverse (peg/match esc-code-peg str))] 
+    (var in-x x)
+    (var ret-x 0)
+    (while (> in-x 0)
+      (var next-peg (array/pop str-peg))
+      (var peg-str (first next-peg)) 
+      (var peg-val (last next-peg))
+      (var next-peg-len (length peg-str))
+      (if (> in-x peg-val)
+        (do (set ret-x (+ ret-x next-peg-len))
+            (set in-x (- in-x peg-val)))
+        (do (set ret-x (+ ret-x in-x))
+            (set in-x 0))))
+    ret-x))
+
 (defn add-search-hl [rows]
   (map |(insert-search-highlight $ (search-peg)) rows))
+
+(varfn selection-active? [])
+
+(defn add-select-hl [rows]
+  (if (selection-active?)
+    (let [[from-x from-y] (values (editor-state :select-from))
+          [to-x to-y] (values (editor-state :select-to))]
+      (cond
+        (= from-y to-y)
+        (do (update rows (- from-y (editor-state :rowoffset))
+                    | (string/insert $ (hl-x $ to-x) "\e[0;49m"))
+            (update rows (- from-y (editor-state :rowoffset))
+                    | (string/insert $ (hl-x $ from-x) "\e[48;2;38;79;120m")))
+        (= 2 (- to-y from-y)) 
+        # TODO: Multi-line selection highlight
+        (break))
+      rows)
+    rows))
 
 (defn add-syntax-hl [rows]
   (map insert-highlight rows))
@@ -488,6 +540,7 @@
        (trim-to-width)
        (add-syntax-hl)
        (add-search-hl)
+       (add-select-hl)
        (fill-empty-rows)
        (add-welcome-message)
        (apply-margin)
@@ -521,23 +574,33 @@
 
 (defn clip-copy-single [kind y from-x to-x]
   (let [line (string/slice (get-in editor-state [:erows y]) from-x to-x)]
-    (edup :clipboard |(array/push $ line))))
+    (edup :clipboard |(array/push $ line))
+    (when (= kind :cut)
+      (update-erow y |(string/cut $ from-x to-x)))))
 
 (defn clip-copy-multi [kind]
   (let [[from-x from-y] (values (editor-state :select-from))
         [to-x to-y] (values (editor-state :select-to))]
     # Copy first line-- might be partial
     (clip-copy-single kind from-y from-x (max-x from-y))
+    (when (= kind :cut)
+      (update-erow from-y |(string/cut $ from-x (max-x from-y))))
     
     # Copy intermediate lines 
     (if (> (- to-y from-y) 1)
-       (let [lines (array/slice (editor-state :erows) 
-                               (inc from-y) 
-                               (dec to-y))]
-        (map (fn [l] (edup :clipboard (array/push l))) lines)))
+       (let [lines (array/slice (editor-state :erows)
+                                (inc from-y)
+                                (dec to-y))]
+         (map (fn [l] (edup :clipboard | (array/push $ l))) lines)
+         (when (= kind :cut)
+           (map (fn [i] (edup :erows | (array/remove $ i)))
+                (range (inc from-y)
+                       to-y)))))
 
     # Copy last line-- might be partial
-    (clip-copy-single kind to-y 0 to-x)))
+    (clip-copy-single kind to-y 0 to-x)
+    (when (= kind :cut)
+      (update-erow to-y |(string/cut $ 0 to-x)))))
     
 
 # Kind can be :copy or :cut
@@ -553,7 +616,73 @@
 (varfn editor-handle-typing [])
 
 (defn paste-clipboard []
-  (map editor-handle-typing (string/bytes (editor-state :clipboard))))
+  (map editor-handle-typing 
+       (string/bytes 
+        (string/join (editor-state :clipboard)))))
+
+### Selection ###
+
+(varfn selection-active? []
+  (and (not (empty? (editor-state :select-from)))
+       (not (empty? (editor-state :select-to)))))
+
+(defn clear-selection []
+  (edset :select-from {}
+         :select-to {}))
+
+(defn grow-selection [dir]
+  (let [start-x (abs-x)
+        start-x (abs-y)]
+   (case dir
+     :left (do (move-cursor :left)
+               (update-in editor-state [:select-from :x] dec))
+     :right (do (move-cursor :right)
+                (update-in editor-state [:select-to :x] inc))
+     # TODO: growing selection up and down
+     :up (break)
+     :down (break))))
+
+(defn shrink-selection [dir]
+  (case dir 
+    :left (do (move-cursor :left)
+               (update-in editor-state [:select-to :x] dec))
+    :right (do (move-cursor :right)
+               (update-in editor-state [:select-from :x] inc)) 
+    # TODO: shrinking selection up and down
+    :up (break)
+    :down (break)))
+
+(defn handle-selection [dir]
+  (if (selection-active?)
+    
+    (let [from (values (editor-state :select-from))
+          to (values (editor-state :select-to))]
+      (cond
+        #Cursor at beginning of selection
+        (deep= @[(abs-x) (abs-y)] from)
+        (case dir
+          :left (grow-selection dir)
+          :right (shrink-selection dir)
+          # TODO: Handling selection up and down
+          :up (break)
+          :down (break))
+        #Cursor at end of selection
+        (deep= @[(abs-x) (abs-y)] to)
+        (case dir
+          :left (shrink-selection dir)
+          :right (grow-selection dir)
+          # TODO: Handling selection up and down
+          :up (break)
+          :down (break))))
+    
+    (do (edset :select-from @{:x (abs-x) :y (abs-y)}
+               :select-to @{:x (abs-x) :y (abs-y)})
+        (grow-selection dir))))
+
+(comment 
+  (reset-editor-state)
+  (load-file "../LICENSE")
+  )
 
 ### Input ###
 
@@ -654,6 +783,7 @@
       (ctrl-key (chr "c")) (copy-to-clipboard :copy)
       (ctrl-key (chr "x")) (copy-to-clipboard :cut)
       (ctrl-key (chr "v")) (paste-clipboard)
+      (ctrl-key (chr "p")) (paste-clipboard)
 
       # If on home page of file
       :pageup (if (= 0 v-offset)
@@ -669,24 +799,28 @@
       :tab (repeat 4 (editor-handle-typing 32))
 
       # If cursor at margin and viewport at far left
-      :leftarrow (do (if (= (abs-x) 0)
+      :leftarrow (do (when (selection-active?) (clear-selection))
+                     (if (= (abs-x) 0)
                        (wrap-to-end-of-prev-line)
                        (move-cursor :left))
                      (edset :rememberx 0))
 
       # If cursor at end of current line, accounting for horizontal scrolling
-      :rightarrow (do (if (= (abs-x) (rowlen (abs-y)))
+      :rightarrow (do (when (selection-active?) (clear-selection))
+                      (if (= (abs-x) (rowlen (abs-y)))
                         (wrap-to-start-of-next-line)
                         (move-cursor :right))
                       (edset :rememberx 0))
 
       # If on top row of file
-      :uparrow (do (if (= (abs-y) 0)
+      :uparrow (do (when (selection-active?) (clear-selection))
+                   (if (= (abs-y) 0)
                      (move-cursor :home)
                      (move-cursor-with-mem :up))
                    (update-x-memory cx))
 
-      :downarrow (do (move-cursor-with-mem :down)
+      :downarrow (do (when (selection-active?) (clear-selection))
+                     (move-cursor-with-mem :down)
                      (update-x-memory cx))
       
       :ctrlleftarrow (move-cursor :word-left)
@@ -697,8 +831,9 @@
       :ctrldownarrow (break)
       
       # TODO: Shift + arrows
-      :shiftleftarrow (break)
-      :shiftrightarrow (break)
+      :shiftleftarrow (handle-selection :left)
+      :shiftrightarrow (handle-selection :right)
+      # TODO: Handling selection up and down
       :shiftuparrow (break)
       :shiftdownarrow (break)
 
@@ -706,8 +841,7 @@
       
       :enter (carriage-return)
 
-      # TODO: Escape-- cancel selection
-      :esc (break)
+      :esc (when (selection-active?) (clear-selection))
 
       :backspace (cond
                    #On top line and home row of file; do nothing
