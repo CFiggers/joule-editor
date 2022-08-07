@@ -4,7 +4,7 @@
 ### Definitions ###
 
 (def version
-  "0.0.2")
+  "0.0.3")
 
 (def keymap
   {9 :tab
@@ -27,7 +27,8 @@
    1013 :shiftleftarrow
    1014 :shiftrightarrow
    1015 :shiftuparrow
-   1016 :shiftdownarrow})
+   1016 :shiftdownarrow
+   1017 :shiftdel})
 
 ### Data ###
 
@@ -54,6 +55,9 @@
             :statusmsgtime 0
             :modalmsg ""
             :modalinput ""
+            :select-from @{}
+            :select-to @{}
+            :clipboard @["Hello, there"]
             :screenrows (- ((get-window-size) :rows) 2)
             :screencols ((get-window-size) :cols)
             :userconfig @{:scrollpadding 5
@@ -95,12 +99,12 @@
      (string/slice str (- (inc (- (length str) at))))))
 
 (defn string/cut [str at &opt until]
+  (default until at)
   (assert (>= at 0) "Can't string/cut: `at` is negative")
   (assert (>= until at) "Can't string/cut: `until` is less than `at`")
-  (if (not until)
-   (string 
-     (string/slice str 0 at)
-     (string/slice str (- at (length str))))))
+  (string
+   (string/slice str 0 at)
+   (string/slice str (- until (length str)))))
 
 (defn edset [& key-v]
   (assert (= 0 (% (safe-len key-v) 2)))
@@ -203,6 +207,12 @@
 # TODO: Implement jump to line number
 # TODO: Implement jump to start/end of file
 
+(defn jump-to [y x]
+  (edset :rowoffset (max 0 (- y (math/trunc (/ (editor-state :screenrows) 2))))
+         :coloffset (max 0 (+ 10 (- x (editor-state :screencols)))))
+  (edset :cy (- y (editor-state :rowoffset))
+         :cx (- x (editor-state :coloffset))))
+
 (defn move-viewport [direction]
   (case direction
     :up (edup :rowoffset dec)
@@ -233,6 +243,26 @@
       (move-viewport :end)
       (move-viewport :home))
     (edset :cx (max-x (abs-y)))))
+  
+(varfn wrap-to-end-of-prev-line [])
+(varfn wrap-to-start-of-next-line [])
+
+(defn move-word [dir] 
+  (if (and (= dir :left) (= (editor-state :cx) 0) (= (editor-state :cy) 0)) (break))
+  (let [delims " .-_([{}])'\"\\/"
+        left (case dir :left true :right false)
+        [f df] (if left [string/reverse -] [identity +])
+        mf (if left wrap-to-end-of-prev-line wrap-to-start-of-next-line)
+        line (f (get-in editor-state [:erows (abs-y)]))
+        x (if left (- (max-x (abs-y)) (abs-x)) (abs-x))
+        s (string/slice line x)
+        ls (safe-len (take-while |(index-of $ (string/bytes delims)) (string/bytes s)))
+        d (peg/find ~(set ,delims) s ls)]
+    (cond 
+      (= (string/trim s) "") (do (mf)
+                                 (move-word dir))
+      (nil? d) (if left (move-cursor-home) (move-cursor-end))
+      (edup :cx |(df $ d)))))
 
 (defn move-cursor [direction]
   (case direction 
@@ -241,7 +271,9 @@
     :left (edup :cx dec)
     :right (edup :cx inc)
     :home (move-cursor-home)
-    :end (move-cursor-end)))
+    :end (move-cursor-end)
+    :word-left (move-word :left)
+    :word-right (move-word :right)))
 
 (defn editor-scroll []
   (let [cx (editor-state :cx)
@@ -283,11 +315,11 @@
   (when (> cx (editor-state :rememberx))
     (edset :rememberx cx)))
 
-(defn wrap-to-end-of-prev-line []
+(varfn wrap-to-end-of-prev-line []
   (move-cursor :up)
   (move-cursor :end))
 
-(defn wrap-to-start-of-next-line []
+(varfn wrap-to-start-of-next-line []
   (move-cursor :down)
   (move-cursor :home))
 
@@ -312,7 +344,7 @@
                  :main (some :value)}))
 
 (defn search-peg []
-  (let [search-str (if (and (editor-state :tempx) (editor-state :modalinput))
+  (let [search-str (if (and (editor-state :search-active) (editor-state :modalinput))
                      ~(replace (<- ,(editor-state :modalinput)) ,| (bg-color $ :dull-blue)) 
                      -1)]
     ~{:search ,search-str
@@ -331,8 +363,51 @@
 
 ### Output ###
 
+(def esc-code-peg
+  (peg/compile
+   ~{:esc-code (replace (<- (* "\e[" (some (+ :d ";")) "m"))
+                        ,(fn [cap] [cap 0]))
+     :else (replace (<- (to (+ "\e" -1))) 
+                    ,(fn [cap] [cap (length cap)]))
+     :main (some (+ :esc-code :else))}))
+
+
+(defn hl-x [str x]
+  (let [str-peg (reverse (peg/match esc-code-peg str))] 
+    (var in-x x)
+    (var ret-x 0)
+    (while (> in-x 0)
+      (var next-peg (array/pop str-peg))
+      (var peg-str (first next-peg)) 
+      (var peg-val (last next-peg))
+      (var next-peg-len (length peg-str))
+      (if (> in-x peg-val)
+        (do (set ret-x (+ ret-x next-peg-len))
+            (set in-x (- in-x peg-val)))
+        (do (set ret-x (+ ret-x in-x))
+            (set in-x 0))))
+    ret-x))
+
 (defn add-search-hl [rows]
   (map |(insert-search-highlight $ (search-peg)) rows))
+
+(varfn selection-active? [])
+
+(defn add-select-hl [rows]
+  (if (selection-active?)
+    (let [[from-x from-y] (values (editor-state :select-from))
+          [to-x to-y] (values (editor-state :select-to))]
+      (cond
+        (= from-y to-y)
+        (do (update rows (- from-y (editor-state :rowoffset))
+                    | (string/insert $ (hl-x $ to-x) "\e[0;49m"))
+            (update rows (- from-y (editor-state :rowoffset))
+                    | (string/insert $ (hl-x $ from-x) "\e[48;2;38;79;120m")))
+        (= 2 (- to-y from-y)) 
+        # TODO: Multi-line selection highlight
+        (break))
+      rows)
+    rows))
 
 (defn add-syntax-hl [rows]
   (map insert-highlight rows))
@@ -349,6 +424,8 @@
                   "Ctrl + s                 save"
                   "Ctrl + a              save as"
                   "Ctrl + f               search"
+                  "Ctrl + c                 copy"
+                  "Ctrl + p                paste"
                   "Ctrl + n       toggle numbers"])
   (if (deep= @[] (flatten (editor-state :erows)))
     (let [r (editor-state :screenrows)
@@ -456,6 +533,7 @@
        (trim-to-width)
        (add-syntax-hl)
        (add-search-hl)
+       (add-select-hl)
        (fill-empty-rows)
        (add-welcome-message)
        (apply-margin)
@@ -482,6 +560,123 @@
   (file/write stdout abuf)
   (file/flush stdout))
 
+### Clipboard ###
+
+(defn clear-clipboard []
+  (edset :clipboard @[]))
+
+(varfn clear-selection [])
+
+(defn clip-copy-single [kind y from-x to-x]
+  (let [line (string/slice (get-in editor-state [:erows y]) from-x to-x)]
+    (edup :clipboard |(array/push $ line))
+    (when (= kind :cut)
+      (update-erow y | (string/cut $ from-x (dec to-x)))
+      (clear-selection)
+      (edset :cx from-x))))
+
+# TODO: Debug this-- almost definitely glitchy
+(defn clip-copy-multi [kind]
+  (let [[from-x from-y] (values (editor-state :select-from))
+        [to-x to-y] (values (editor-state :select-to))]
+    # Copy first line-- might be partial
+    (clip-copy-single kind from-y from-x (max-x from-y))
+    (when (= kind :cut)
+      (update-erow from-y |(string/cut $ from-x (max-x from-y))))
+    
+    # Copy intermediate lines 
+    (if (> (- to-y from-y) 1)
+       (let [lines (array/slice (editor-state :erows)
+                                (inc from-y)
+                                (dec to-y))]
+         (map (fn [l] (edup :clipboard | (array/push $ l))) lines)
+         (when (= kind :cut)
+           (map (fn [i] (edup :erows | (array/remove $ i)))
+                (range (inc from-y)
+                       to-y)))))
+
+    # Copy last line-- might be partial
+    (clip-copy-single kind to-y 0 to-x)
+    (when (= kind :cut)
+      (update-erow to-y |(string/cut $ 0 to-x)))))
+    
+
+# Kind can be :copy or :cut
+(defn copy-to-clipboard [kind]
+  (clear-clipboard)
+  (if (= ((editor-state :select-from) :y) 
+         ((editor-state :select-to) :y))
+    (clip-copy-single kind (abs-y) 
+                      ((editor-state :select-from) :x)
+                      ((editor-state :select-to) :x))  
+    (clip-copy-multi kind)))
+
+(varfn editor-handle-typing [])
+
+(defn paste-clipboard []
+  (map editor-handle-typing 
+       (string/bytes 
+        (string/join (editor-state :clipboard)))))
+
+### Selection ###
+
+(varfn selection-active? []
+  (and (not (empty? (editor-state :select-from)))
+       (not (empty? (editor-state :select-to)))))
+
+(varfn clear-selection []
+  (edset :select-from {}
+         :select-to {}))
+
+(defn grow-selection [dir]
+  (let [start-x (abs-x)
+        start-x (abs-y)]
+   (case dir
+     :left (do (move-cursor :left)
+               (update-in editor-state [:select-from :x] dec))
+     :right (do (move-cursor :right)
+                (update-in editor-state [:select-to :x] inc))
+     # TODO: growing selection up and down
+     :up (break)
+     :down (break))))
+
+(defn shrink-selection [dir]
+  (case dir 
+    :left (do (move-cursor :left)
+               (update-in editor-state [:select-to :x] dec))
+    :right (do (move-cursor :right)
+               (update-in editor-state [:select-from :x] inc)) 
+    # TODO: shrinking selection up and down
+    :up (break)
+    :down (break)))
+
+(defn handle-selection [dir]
+  (if (selection-active?)
+    
+    (let [from (values (editor-state :select-from))
+          to (values (editor-state :select-to))]
+      (cond
+        #Cursor at beginning of selection
+        (deep= @[(abs-x) (abs-y)] from)
+        (case dir
+          :left (grow-selection dir)
+          :right (shrink-selection dir)
+          # TODO: Handling selection up and down
+          :up (break)
+          :down (break))
+        #Cursor at end of selection
+        (deep= @[(abs-x) (abs-y)] to)
+        (case dir
+          :left (shrink-selection dir)
+          :right (grow-selection dir)
+          # TODO: Handling selection up and down
+          :up (break)
+          :down (break))))
+    
+    (do (edset :select-from @{:x (abs-x) :y (abs-y)}
+               :select-to @{:x (abs-x) :y (abs-y)})
+        (grow-selection dir))))
+
 ### Input ###
 
 (defn handle-out-of-bounds []
@@ -500,7 +695,7 @@
                        (editor-state :rowoffset))))
     (edset :cx (max-x (abs-y)))))
 
-(defn editor-handle-typing [key]
+(varfn editor-handle-typing [key]
   (handle-out-of-bounds)
   (let [char (string/format "%c" key)]
     (update-erow (abs-y) | (string/insert $ (abs-x) char))
@@ -519,13 +714,21 @@
     (move-cursor :left))
   (update-erow (abs-y) | (string/cut $ (abs-x))))
 
+(defn kill-row [y]
+  (edup :erows |(array/remove $ y)))
+
+(defn delete-row []
+  (kill-row (abs-y))
+  (move-cursor :home)
+  (edup :dirty inc))
+
 (defn backspace-back-to-prev-line []
   (let [current-line (get-in editor-state [:erows (abs-y)])
         leaving-y (abs-y)]
     (move-cursor :up)
     (move-cursor :end) 
     # drop line being left
-    (edup :erows |(array/remove $ leaving-y))
+    (kill-row leaving-y)
     # append current-line to new line
     (update-erow (abs-y) | (string $ current-line))))
 
@@ -545,9 +748,11 @@
 # Declaring out of order to allow type checking to pass
 (varfn save-file [])
 (varfn save-file-as [])
+
 (varfn load-file-modal [])
 (varfn close-file [])
 (varfn find-in-text-modal [])
+(varfn jump-to-modal [])
 
 (defn editor-process-keypress [&opt in-key]
   (let [key (or in-key (read-key)) #Blocks here waiting on keystroke
@@ -564,8 +769,14 @@
       (ctrl-key (chr "d")) (enter-debugger) 
       (ctrl-key (chr "w")) (close-file :close)
       (ctrl-key (chr "f")) (find-in-text-modal)
+      (ctrl-key (chr "g")) (jump-to-modal)
       (ctrl-key (chr "z")) (break) # TODO: Undo in normal typing
       (ctrl-key (chr "y")) (break) # TODO: Redo in normal typing
+      
+      (ctrl-key (chr "c")) (copy-to-clipboard :copy)
+      (ctrl-key (chr "x")) (copy-to-clipboard :cut)
+      (ctrl-key (chr "v")) (paste-clipboard)
+      (ctrl-key (chr "p")) (paste-clipboard)
 
       # If on home page of file
       :pageup (if (= 0 v-offset)
@@ -581,42 +792,53 @@
       :tab (repeat 4 (editor-handle-typing 32))
 
       # If cursor at margin and viewport at far left
-      :leftarrow (do (if (= (abs-x) 0)
+      :leftarrow (do (when (selection-active?) (clear-selection))
+                     (if (= (abs-x) 0)
                        (wrap-to-end-of-prev-line)
                        (move-cursor :left))
                      (edset :rememberx 0))
 
       # If cursor at end of current line, accounting for horizontal scrolling
-      :rightarrow (do (if (= (abs-x) (rowlen (abs-y)))
+      :rightarrow (do (when (selection-active?) (clear-selection))
+                      (if (= (abs-x) (rowlen (abs-y)))
                         (wrap-to-start-of-next-line)
                         (move-cursor :right))
                       (edset :rememberx 0))
 
       # If on top row of file
-      :uparrow (do (if (= (abs-y) 0)
+      :uparrow (do (when (selection-active?) (clear-selection))
+                   (if (= (abs-y) 0)
                      (move-cursor :home)
                      (move-cursor-with-mem :up))
                    (update-x-memory cx))
 
-      :downarrow (do (move-cursor-with-mem :down)
+      :downarrow (do (when (selection-active?) (clear-selection))
+                     (move-cursor-with-mem :down)
                      (update-x-memory cx))
       
-      # TODO: Ctrl + arrows
-      :ctrlleftarrow (break)
-      :ctrlrightarrow (break)
+      :ctrlleftarrow (move-cursor :word-left)
+      :ctrlrightarrow (move-cursor :word-right)
+      
+      # TODO: Multiple cursors?
       :ctrluparrow (break)
       :ctrldownarrow (break)
       
       # TODO: Shift + arrows
-      :shiftleftarrow (break)
-      :shiftrightarrow (break)
+      :shiftleftarrow (if (= (abs-x) 0)
+                        (break)
+                        (handle-selection :left))
+      :shiftrightarrow (if (= (abs-x) (rowlen (abs-y)))
+                        (break)
+                        (handle-selection :right))
+      # TODO: Handling selection up and down
       :shiftuparrow (break)
       :shiftdownarrow (break)
+
+      :shiftdel (delete-row)
       
       :enter (carriage-return)
 
-      # TODO: Escape
-      :esc (break)
+      :esc (when (selection-active?) (clear-selection))
 
       :backspace (cond
                    #On top line and home row of file; do nothing
@@ -650,7 +872,7 @@
 
 (var modal-cancel false)
 
-(var modal-rethome false)
+(var modal-rethome true)
 
 (defn delete-char-modal [direction]
   (let [mx (- (abs-x) (safe-len (editor-state :modalmsg)) 4)]
@@ -748,6 +970,8 @@
       :shiftuparrow (break)
       :shiftdownarrow (break)
 
+      :shiftdel (break)
+
       :home (move-cursor-modal :home)
       :end (move-cursor-modal :end)
 
@@ -755,35 +979,37 @@
       
       (modal-handle-typing key))))
 
-(defn modal [message kind callback &named modalendput]
-  (let [ret-x (editor-state :cx)
-        ret-y (editor-state :cy)]
+(defn modal [message kind callback &named modalendput] 
+  (when modal-rethome
+    (set-temp-pos))
 
-    #Init modal-related state
-    (edset :statusmsg ""
-           :modalinput ""
-           :modalmsg message)
-    #Two separate calls to edset because (modal-home) depends
-    #on :modalmsg, so first call needs to commit before second
-    #runs correctly
-    (edset :cx (modal-home))
-    (edset :cy (+ (editor-state :screenrows) 2))
+  #Init modal-related state
+  (edset :statusmsg ""
+         :modalinput ""
+         :modalmsg message)
+  #Two separate calls to edset because (modal-home) depends
+  #on :modalmsg, so first call needs to commit before second
+  #runs correctly
+  (edset :cx (modal-home))
+  (edset :cy (+ (editor-state :screenrows) 2))
 
-    (set modal-active true)
-    (set modal-cancel false)
-    (while (and modal-active (not modal-cancel))
-      (editor-refresh-screen :modal)
-      (modal-process-keypress kind))
+  (set modal-active true)
+  (set modal-cancel false)
+  (while (and modal-active (not modal-cancel))
+    (editor-refresh-screen :modal)
+    (modal-process-keypress kind))
 
-    (unless modal-cancel (callback))
+  (unless modal-cancel (callback))
 
-    #Clean up modal-related state
+  #Clean up modal-related state
 
-    (edset :modalmsg ""
-           :modalinput (or modalendput ""))
-    (when modal-rethome
-      (return-to-temp-pos))
-    (clear-temp-pos)))
+  (edset :modalmsg ""
+         :modalinput (or modalendput ""))
+  (when modal-rethome
+    (return-to-temp-pos)
+    (clear-temp-pos))
+  (unless modal-rethome
+          (set modal-rethome true)))
 
 ### File I/O ###
 
@@ -814,7 +1040,7 @@
            (edset :dirty 0)
            (send-status-msg (string "File saved!"))))
 
-(varfn load-file-modal []
+(varfn load-file-modal [] 
   (modal "Load what file?" :input |(load-file (editor-state :modalinput))) 
   (if modal-cancel
     (send-status-msg "Cancelled.")
@@ -834,10 +1060,7 @@
         filter-fn (fn [[y x]] (or (> y (abs-y)) (and (= y (abs-y)) (> x (abs-x)))))
         next-results (sort (filter filter-fn all-results))
         [y x] (or (first next-results) (first all-results))]
-    (edset :rowoffset (max 0 (- y (math/trunc (/ (editor-state :screenrows) 2))))
-           :coloffset (max 0 (+ 10 (- x (editor-state :screencols)))))
-    (edset :cy (- y (editor-state :rowoffset))
-           :cx (- x (editor-state :coloffset)))
+    (jump-to y x)
     (editor-refresh-screen)))
 
 # TODO: Implement case sensitive vs insensitive search
@@ -853,19 +1076,23 @@
     (move-to-match)) 
 
   (let [key (read-key)
-        exit-search |(do (return-to-temp-pos)
-                         (clear-temp-pos)
-                         (editor-refresh-screen))]
+        exit-search |(do (clear-temp-pos)
+                         (edset :search-active nil))
+        cancel-search |(do (return-to-temp-pos)
+                           (exit-search)
+                           (editor-refresh-screen))]
     (case (get keymap key key)
-      (ctrl-key (chr "q")) (exit-search)
+      (ctrl-key (chr "q")) (cancel-search)
       (ctrl-key (chr "d")) (enter-debugger)
 
+      :tab (do (move-to-match)
+                 (find-next))
       :enter (do (move-to-match)
                  (find-next))
-      :esc (exit-search)
+      :esc (cancel-search)
       
       # Otherwise
-      (do (clear-temp-pos)
+      (do (exit-search)
           # Process keypress normally
           (editor-process-keypress key)))))
 
@@ -881,14 +1108,24 @@
       (send-status-msg "No matches found."))))
 
 (varfn find-in-text-modal []
-       (set-temp-pos)
-       (set modal-rethome true)
+       (edset :search-active true) 
        (modal "Search: " :input | (do (find-all (editor-state :modalinput))
                                       (if (< 0 (safe-len (editor-state :search-results)))
                                         (find-next true)
                                         (do (return-to-temp-pos)
-                                            (clear-temp-pos)
+                                            (clear-temp-pos) 
+                                            (set modal-rethome false)
+                                            (edset :search-active nil)
                                             (send-status-msg "No matches found."))))))
+
+### Misc Modals ### 
+
+(varfn jump-to-modal [] 
+  (modal "Go where? (Line #)" :input
+         | (if-let [n (scan-number (editor-state :modalinput))]
+             (jump-to (dec (math/floor n)) 0)
+             (do (return-to-temp-pos)
+                 (send-status-msg "Try again.")))))
 
 ### Init and main ###
 
@@ -897,21 +1134,20 @@
 (varfn confirm-lose-changes [callback]
   (let [dispatch 
         |(do (case (string/ascii-lower (editor-state :modalinput))
-                   "yes" (callback)
+                   "yes" (do (edset :dirty 0) (callback))
                    "n" (send-status-msg "Tip: Ctrl + s to Save.")
                    "no" (send-status-msg "Tip: Ctrl + s to Save.")
                    "s" (if (save-file)
-                         (callback)
+                         (do (edset :dirty 0) (callback))
                          (send-status-msg "Tip: Ctrl + s to Save."))
                    "save" (if (save-file)
-                            (callback)
+                            (do (edset :dirty 0) (callback))
                             (send-status-msg "Tip: Ctrl + s to Save.")))
              (send-status-msg "Tip: Ctrl + s to Save."))]
     (if (< 0 (editor-state :dirty))
       (do (modal "Are you sure? Unsaved changes will be lost. (yes/No/save)"
                  :input 
-                 dispatch)
-          (edset :dirty 0))
+                 dispatch))
       (callback))))
 
 (varfn close-file [kind]
@@ -919,6 +1155,7 @@
                    :quit |(set j-quit true)
                    :close |(do (reset-editor-state)
                                (send-status-msg "File closed.")))]
+    (set modal-rethome false)
     (confirm-lose-changes callback)))
 
 (defn load-config [] 
