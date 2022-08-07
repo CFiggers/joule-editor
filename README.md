@@ -2,7 +2,7 @@
 
 A simple terminal-based text editor written in [Janet](janet-lang/janet). Inspired by (but not a full faithful recreation of) [this guide](https://viewsourcecode.org/snaptoken/kilo/index.html) by [paigeruten](https://github.com/paigeruten).
 
-![joule_demo_2_080122](https://user-images.githubusercontent.com/55862180/182345509-ad80553f-8078-4f44-b342-f0cfb1d91bb6.gif)
+![joule-0 0 3-demo](https://user-images.githubusercontent.com/55862180/183270845-b429adb7-55ba-4fb2-a235-00bd7256cf1c.gif)
 
 ## Getting Started 
 
@@ -16,8 +16,8 @@ Requires [Janet](https://www.github.com/janet-lang/janet) and [JPM](https://www.
 
 Now you can either build a native binary executable using `$ jpm build` or run the Janet source code directly using the `janet` command and passing in the `src/joule.janet` source file.
 
-- Build a Native Executable
+- To Build a Native Executable:
     - `$ jpm build`
     - `$ ./build/joule`
-- Run using Janet
+- Or to Run as a script using Janet:
     - `$ janet src/joule.janet`
