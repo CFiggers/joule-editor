@@ -204,7 +204,6 @@
 # TODO: Implement buffer of lines to keep at top/bottom of screen
 # when scrolling up/down, based on [:userconfig :scrollpadding]
 
-# TODO: Implement jump to line number
 # TODO: Implement jump to start/end of file
 
 (defn jump-to [y x]
@@ -1121,6 +1120,7 @@
 ### Misc Modals ### 
 
 (varfn jump-to-modal [] 
+  (set modal-rethome false)
   (modal "Go where? (Line #)" :input
          | (if-let [n (scan-number (editor-state :modalinput))]
              (jump-to (dec (math/floor n)) 0)
