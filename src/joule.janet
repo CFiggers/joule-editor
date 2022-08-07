@@ -4,7 +4,7 @@
 ### Definitions ###
 
 (def version
-  "0.0.3")
+  "0.0.4")
 
 (def keymap
   {9 :tab
@@ -423,6 +423,7 @@
                   "Ctrl + s                 save"
                   "Ctrl + a              save as"
                   "Ctrl + f               search"
+                  "Ctrl + g       go (to line #)"
                   "Ctrl + c                 copy"
                   "Ctrl + p                paste"
                   "Ctrl + n       toggle numbers"])
@@ -505,6 +506,7 @@
 (defn add-status-bar [rows]
   (let [leftpad (string/repeat " " (get-margin))
         filename (editor-state :filename)
+        # TODO: Handle Modal cursor position, like "M:0" at modal-home
         cursor-pos (string (inc (abs-y)) ":" (abs-x))
         midpad (string/repeat " " (- (editor-state :screencols)
                                   ;(map safe-len [filename cursor-pos leftpad])
