@@ -575,6 +575,7 @@
       (clear-selection)
       (edset :cx from-x))))
 
+# TODO: Debug this-- almost definitely glitchy
 (defn clip-copy-multi [kind]
   (let [[from-x from-y] (values (editor-state :select-from))
         [to-x to-y] (values (editor-state :select-to))]
