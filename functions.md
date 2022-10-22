@@ -51,13 +51,13 @@ id1(main)
         %% idt2(read-key):::indigo
         id1.3.1{{keymap}}:::indigo
             id1.3.1.1(ctrl-key functions):::indigo
-                id1.3.1.1.1(close-file):::indigo
+                id1.3.1.1.1("close-file (quit)"):::indigo
                 id1.3.1.1.2(toggle-line-numbers):::indigo
                 id1.3.1.1.3(load-file-modal):::indigo
                 id1.3.1.1.4(save-file):::indigo
                 id1.3.1.1.5(save-file-as):::indigo
                 id1.3.1.1.6(enter-debugger):::indigo
-                id1.3.1.1.7(close-file):::indigo
+                id1.3.1.1.7("close-file (close)"):::indigo
                 id1.3.1.1.8(find-in-text-modal):::indigo
                 id1.3.1.1.9(jump-to-modal):::indigo
                 id1.3.1.1.10(undo):::indigo
