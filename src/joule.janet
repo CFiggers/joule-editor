@@ -298,12 +298,11 @@
 # TODO: Janet Long strings w/ ``` syntax
 # TODO: Extensible syntax highlighting schemes for different languages
 
-(def hl-rules
-  (highlight-rules :janet))
-
 (defn search-peg []
-  (let [search-str (if (and (editor-state :search-active) (editor-state :modalinput))
-                     ~(replace (<- ,(editor-state :modalinput)) ,| (bg-color $ :dull-blue)) 
+  (let [search-str (if (and (editor-state :search-active) 
+                            (editor-state :modalinput))
+                     ~(replace (<- ,(editor-state :modalinput)) 
+                               ,| (bg-color $ :dull-blue)) 
                      -1)]
     ~{:search ,search-str
       :else (<- 1) 
@@ -317,7 +316,9 @@
 
 (defn insert-highlight [str]
   (if (= str "") "" 
-    (string/join (peg/match hl-rules str))))
+    (string/join
+     (peg/match (or (highlight-rules (editor-state :filetype))
+                    ~(<- (some 1))) str))))
 
 ### Output ###
 
@@ -973,14 +974,24 @@
 
 ### File I/O ###
 
+(defn detect-filetype [filename]
+  (if-let [filen (string/split "." filename)]
+    (case (last filen)
+      "janet" :janet
+      "c" :c
+      "md" :md
+      :txt)
+    :txt))
+
 (varfn confirm-lose-changes [])
 
 (defn load-file [filename]
   (let [erows (string/split "\n" (try (slurp filename) 
                                       ([e f] (spit filename "")
                                              (slurp filename))))
-        callback |(edset :filename filename
-                         :erows erows)]
+        callback |(do (edset :filename filename
+                             :erows erows
+                             :filetype (detect-filetype filename)))]
     (confirm-lose-changes callback)))
 
 (defn ask-filename-modal []

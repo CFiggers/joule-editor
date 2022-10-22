@@ -58,9 +58,24 @@
       :value (+ :comment :string :numbers :keyword :special :symbol :ws :else)
       :main (some :value)}
    :c 
-    ~{}
+    ~(<- (some 1))
+    # ~{:ws (<- (set " \t\r\f\n\0\v"))
+    #   :else (<- 1)
+    #   :value (+ :ws :else)
+    #   :main (some value)}
    :md
-    ~{}})
+    ~(<- (some 1)) 
+    # ~{:ws (<- (set " \t\r\f\n\0\v"))
+    #   :else (<- 1)
+    #   :value (+ :ws :else)
+    #   :main (some value)}
+   :txt
+    ~(<- (some 1))
+    # ~{:ws (<- (set " \t\r\f\n\0\v"))
+    #   :else (<- 1)
+    #   :value (+ :ws :else)
+    #   :main (some value)}
+   })
 
 (defn compile-highlights [lang-key]
   (peg/compile (highlight-rules lang-key)))
