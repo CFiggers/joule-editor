@@ -1118,8 +1118,11 @@
 (defn main [& args]
   (init args)
 
-  (while (not j-quit)
-    (editor-refresh-screen)
-    (editor-process-keypress))
+  (try (while (not j-quit)
+         (editor-refresh-screen)
+         (editor-process-keypress))
+       ([err fib]
+        (do (exit)
+            (propagate err fib))))
 
   (exit))
