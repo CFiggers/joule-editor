@@ -1,4 +1,6 @@
 (use janet-termios)
+(import spork/path)
+(import jdn)
 (use "./syntax-highlights")
 
 ### Definitions ###
@@ -37,6 +39,18 @@
 # TODO: Implement multiple "tabs"/buffers open simultaneously
 
 (var editor-state @{})
+
+(defn get-user-config []
+  (def user-home ((os/environ) "HOME"))
+  (def joulerc-path (path/join user-home ".joulerc"))
+  (if (nil? (os/stat joulerc-path))
+    (let [default-config @{:scrollpadding 5
+                           :tabsize 2
+                           :indentwith :spaces
+                           :numtype true}]
+      (spit joulerc-path (jdn/encode default-config))
+      default-config)
+    (jdn/decode (slurp joulerc-path))))
 
 (defn reset-editor-state []
      (set editor-state
