@@ -36,8 +36,8 @@
    (string/slice str (- until (length str)))))
 
 (defn save-jdn [what where &opt append]
-  (default append false)
-  (spit where (jdn/encode what) append))
+  (def mode (if append :a :wb))
+  (spit where (jdn/encode what) mode))
 
 (defn load-jdn [where]
   (jdn/decode (slurp where)))
