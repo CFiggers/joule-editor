@@ -535,7 +535,8 @@
     (clip-copy-single kind (abs-y) 
                       ((editor-state :select-from) :x)
                       ((editor-state :select-to) :x))  
-    (clip-copy-multi kind)))
+    (clip-copy-multi kind))
+  (send-status-msg "Tip: Ctrl + p to paste."))
 
 (varfn editor-handle-typing [])
 
