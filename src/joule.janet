@@ -1,5 +1,6 @@
 (use janet-termios)
 (import spork/path)
+(import jermbox)
 (use "./syntax-highlights")
 (use "./utilities")
 
@@ -9,19 +10,32 @@
   "0.0.4")
 
 (def keymap
-  {9 :tab
-   13 :enter
+  {1 :ctrl-a 2 :ctrl-b 3 :ctrl-c 4 :ctrl-d
+   5 :ctrl-e 6 :ctrl-f 7 :ctrl-g 8 :ctrl-h
+   9 :tab 10 :ctrl-j 11 :ctrl-k 12 :ctrl-l
+   13 :enter 14 :ctrl-n 15 :ctrl-o 16 :ctrl-p
+   17 :ctrl-q 18 :ctrl-r 19 :ctrl-s 20 :ctrl-t
+   21 :ctrl-u 22 :ctrl-v 23 :ctrl-w 24 :ctrl-x
+   25 :ctrl-y 26 :ctrl-z
+
    27 :esc
    127 :backspace
-   1000 :leftarrow
-   1001 :rightarrow
-   1002 :uparrow
-   1003 :downarrow
-   1004 :pageup
-   1005 :pagedown
-   1006 :home
-   1007 :end
-   1008 :del
+
+   65523 :insert
+   65522 :delete
+   65521 :home
+   65520 :end
+   65519 :pageup
+   65518 :pagedown
+   65517 :uparrow
+   65516 :downarrow
+   65515 :leftarrow
+   65514 :rightarrow
+   65513 :mousemiddle
+   65512 :mouserelease
+   65511 :mousewheelup
+   65510 :mousewheeldown
+
    1009 :ctrlleftarrow
    1010 :ctrlrightarrow
    1011 :ctrluparrow
@@ -35,6 +49,8 @@
 ### Data ###
 
 (var j-quit false)
+
+(var env (jermbox/init-event))
 
 # TODO: Implement multiple "tabs"/buffers open simultaneously
 
@@ -681,29 +697,39 @@
 (varfn find-in-text-modal [])
 (varfn jump-to-modal [])
 
+(defn get-jermbox-key []
+  {:key (jermbox/event-key env)
+   :character (jermbox/event-character env)
+   :modifier (jermbox/event-modifier env)})
+
 (defn editor-process-keypress [&opt in-key]
-  (let [key (or in-key (read-key)) #Blocks here waiting on keystroke
+  (jermbox/poll-event env)
+  (let [{:key key
+         :character character
+         :modifier modifier} (get-jermbox-key) #Blocks here waiting on keystroke
         cx (editor-state :cx)
         cy (editor-state :cy)
         v-offset (editor-state :rowoffset)
         h-offset (editor-state :coloffset)]
-    (case (get keymap key key)
-      (ctrl-key (chr "q")) (close-file :quit)
-      (ctrl-key (chr "n")) (toggle-line-numbers)
-      (ctrl-key (chr "l")) (load-file-modal)
-      (ctrl-key (chr "s")) (save-file) 
-      (ctrl-key (chr "a")) (save-file-as) 
-      (ctrl-key (chr "d")) (enter-debugger) 
-      (ctrl-key (chr "w")) (close-file :close)
-      (ctrl-key (chr "f")) (find-in-text-modal)
-      (ctrl-key (chr "g")) (jump-to-modal)
-      (ctrl-key (chr "z")) (break) # TODO: Undo in normal typing
-      (ctrl-key (chr "y")) (break) # TODO: Redo in normal typing
+    (if (not= character 0)
+      (editor-handle-typing key)
+      (case (get keymap key key)
+      :ctrl-q (close-file :quit)
+      :ctrl-n (toggle-line-numbers)
+      :ctrl-l (load-file-modal)
+      :ctrl-s (save-file) 
+      :ctrl-a (save-file-as) 
+      :ctrl-d (enter-debugger) 
+      :ctrl-w (close-file :close)
+      :ctrl-f (find-in-text-modal)
+      :ctrl-g (jump-to-modal)
+      :ctrl-z (break) # TODO: Undo in normal typing
+      :ctrl-y (break) # TODO: Redo in normal typing
       
-      (ctrl-key (chr "c")) (copy-to-clipboard :copy)
-      (ctrl-key (chr "x")) (copy-to-clipboard :cut)
-      (ctrl-key (chr "v")) (paste-clipboard)
-      (ctrl-key (chr "p")) (paste-clipboard)
+      :ctrl-c (copy-to-clipboard :copy)
+      :ctrl-x (copy-to-clipboard :cut)
+      :ctrl-v (paste-clipboard)
+      :ctrl-p (paste-clipboard)
 
       # If on home page of file
       :pageup (if (= 0 v-offset)
@@ -791,7 +817,7 @@
       # TODO: Function row
 
       # Default 
-      (editor-handle-typing key))))
+      (editor-handle-typing key)))))
 
 ### Modals ###
 
@@ -842,9 +868,12 @@
     (move-cursor :right)))
 
 (defn modal-process-keypress [kind] 
-  (let [key (read-key)
+  (jermbox/poll-event env)
+  (let [key (jermbox/event-key) #(read-key)
+        modifier (jermbox/event-modifier)
+        character (jermbox/event-key)
         at-home (= (editor-state :cx) (modal-home))
-        at-end (= (editor-state :cx) 
+        at-end (= (editor-state :cx)
                   (+ (modal-home)
                      (safe-len (editor-state :modalinput))))]
     (case (get keymap key key)
@@ -1100,18 +1129,27 @@
   )
 
 (defn init [args]
-  (when (= (os/which) :linux) 
-    (prin "\e[?1049h]"))
-  (enable-raw-mode)
+  # (when (= (os/which) :linux) 
+  #   (prin "\e[?1049h]"))
+  # (enable-raw-mode)
+  
+  (jermbox/init)
+  (jermbox/select-output-mode jermbox/output-256)
+  (jermbox/select-input-mode 2)
+  (jermbox/clear)
+  (jermbox/present)
+
   (reset-editor-state) 
   (editor-open args))
 
 (defn exit []
   (prin "\x1b[2J")
   (prin "\x1b[H")
-  (disable-raw-mode)
-  (when (= (os/which) :linux)
-    (prin "\e[?1049l")))
+  # (disable-raw-mode)
+  # (when (= (os/which) :linux)
+  #   (prin "\e[?1049l"))
+  (jermbox/shutdown)
+  )
 
 # TODO: Write function tests
 # TODO: Plugins?
@@ -1125,5 +1163,5 @@
        ([err fib]
         (do (exit)
             (propagate err fib))))
-
+  
   (exit))
