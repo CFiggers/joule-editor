@@ -10,10 +10,10 @@
   "0.0.4")
 
 (def keymap
-  {1 :ctrl-a 2 :ctrl-b 3 :ctrl-c 4 :ctrl-d
-   5 :ctrl-e 6 :ctrl-f 7 :ctrl-g 8 :ctrl-h
-   9 :tab 10 :ctrl-j 11 :ctrl-k 12 :ctrl-l
-   13 :enter 14 :ctrl-n 15 :ctrl-o 16 :ctrl-p
+  { 1 :ctrl-a  2 :ctrl-b  3 :ctrl-c  4 :ctrl-d
+    5 :ctrl-e  6 :ctrl-f  7 :ctrl-g  8 :ctrl-h
+    9 :tab    10 :ctrl-j 11 :ctrl-k 12 :ctrl-l
+   13 :enter  14 :ctrl-n 15 :ctrl-o 16 :ctrl-p
    17 :ctrl-q 18 :ctrl-r 19 :ctrl-s 20 :ctrl-t
    21 :ctrl-u 22 :ctrl-v 23 :ctrl-w 24 :ctrl-x
    25 :ctrl-y 26 :ctrl-z
