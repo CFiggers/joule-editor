@@ -1,6 +1,6 @@
 (use janet-termios)
 (import spork/path)
-(import jermbox)
+(import "./jermbox")
 (use "./syntax-highlights")
 (use "./utilities")
 
@@ -9,48 +9,9 @@
 (def version
   "0.0.4")
 
-(def keymap
-  { 1 :ctrl-a  2 :ctrl-b  3 :ctrl-c  4 :ctrl-d
-    5 :ctrl-e  6 :ctrl-f  7 :ctrl-g  8 :ctrl-h
-    9 :tab    10 :ctrl-j 11 :ctrl-k 12 :ctrl-l
-   13 :enter  14 :ctrl-n 15 :ctrl-o 16 :ctrl-p
-   17 :ctrl-q 18 :ctrl-r 19 :ctrl-s 20 :ctrl-t
-   21 :ctrl-u 22 :ctrl-v 23 :ctrl-w 24 :ctrl-x
-   25 :ctrl-y 26 :ctrl-z
-
-   27 :esc
-   127 :backspace
-
-   65523 :insert
-   65522 :delete
-   65521 :home
-   65520 :end
-   65519 :pageup
-   65518 :pagedown
-   65517 :uparrow
-   65516 :downarrow
-   65515 :leftarrow
-   65514 :rightarrow
-   65513 :mousemiddle
-   65512 :mouserelease
-   65511 :mousewheelup
-   65510 :mousewheeldown
-
-   1009 :ctrlleftarrow
-   1010 :ctrlrightarrow
-   1011 :ctrluparrow
-   1012 :ctrldownarrow
-   1013 :shiftleftarrow
-   1014 :shiftrightarrow
-   1015 :shiftuparrow
-   1016 :shiftdownarrow
-   1017 :shiftdel})
-
 ### Data ###
 
 (var j-quit false)
-
-(var env (jermbox/init-event))
 
 # TODO: Implement multiple "tabs"/buffers open simultaneously
 
@@ -697,23 +658,13 @@
 (varfn find-in-text-modal [])
 (varfn jump-to-modal [])
 
-(defn get-jermbox-key []
-  {:key (jermbox/event-key env)
-   :character (jermbox/event-character env)
-   :modifier (jermbox/event-modifier env)})
-
 (defn editor-process-keypress [&opt in-key]
-  (jermbox/poll-event env)
-  (let [{:key key
-         :character character
-         :modifier modifier} (get-jermbox-key) #Blocks here waiting on keystroke
+  (let [key (jermbox/read-key) #Blocks here waiting on keystroke
         cx (editor-state :cx)
         cy (editor-state :cy)
         v-offset (editor-state :rowoffset)
         h-offset (editor-state :coloffset)]
-    (if (not= character 0)
-      (editor-handle-typing key)
-      (case (get keymap key key)
+    (case key
       :ctrl-q (close-file :quit)
       :ctrl-n (toggle-line-numbers)
       :ctrl-l (load-file-modal)
@@ -776,13 +727,19 @@
       :ctrluparrow (break)
       :ctrldownarrow (break)
       
-      # TODO: Shift + arrows
       :shiftleftarrow (if (= (abs-x) 0)
                         (break)
                         (handle-selection :left))
       :shiftrightarrow (if (= (abs-x) (rowlen (abs-y)))
                         (break)
                         (handle-selection :right))
+      
+      # TODO: Shift + Ctrl + Arrows
+      :ctrlshiftuparrow (break)
+      :ctrlshiftdownarrow (break)
+      :ctrlshiftrightarrow (break)
+      :ctrlshiftleftarrow (break)
+
       # TODO: Handling selection up and down
       :shiftuparrow (break)
       :shiftdownarrow (break)
@@ -817,7 +774,7 @@
       # TODO: Function row
 
       # Default 
-      (editor-handle-typing key)))))
+      (editor-handle-typing key))))
 
 ### Modals ###
 
@@ -868,24 +825,21 @@
     (move-cursor :right)))
 
 (defn modal-process-keypress [kind] 
-  (jermbox/poll-event env)
-  (let [key (jermbox/event-key) #(read-key)
-        modifier (jermbox/event-modifier)
-        character (jermbox/event-key)
+  (let [key (jermbox/read-key)
         at-home (= (editor-state :cx) (modal-home))
         at-end (= (editor-state :cx)
                   (+ (modal-home)
                      (safe-len (editor-state :modalinput))))]
-    (case (get keymap key key)
-      (ctrl-key (chr "q")) (set modal-cancel true)
-      (ctrl-key (chr "n")) (break) 
-      (ctrl-key (chr "l")) (break) 
-      (ctrl-key (chr "s")) (break) 
-      (ctrl-key (chr "d")) (enter-debugger)
-      (ctrl-key (chr "w")) (break) 
-      (ctrl-key (chr "f")) (break) 
-      (ctrl-key (chr "z")) (break) # TODO: Undo in modals 
-      (ctrl-key (chr "y")) (break) # TODO: Redo in modals
+    (case key
+      :ctrl-q (set modal-cancel true)
+      :ctrl-n (break) 
+      :ctrl-l (break) 
+      :ctrl-s (break) 
+      :ctrl-d (enter-debugger)
+      :ctrl-w (break) 
+      :ctrl-f (break) 
+      :ctrl-z (break) # TODO: Undo in modals 
+      :ctrl-y (break) # TODO: Redo in modals
       
       :enter (set modal-active false)
 
@@ -1047,9 +1001,9 @@
         cancel-search |(do (return-to-temp-pos)
                            (exit-search)
                            (editor-refresh-screen))]
-    (case (get keymap key key)
-      (ctrl-key (chr "q")) (cancel-search)
-      (ctrl-key (chr "d")) (enter-debugger)
+    (case key
+      :ctrl-q (cancel-search)
+      :ctrl-d (enter-debugger)
 
       :tab (do (move-to-match)
                  (find-next))
@@ -1133,11 +1087,7 @@
   #   (prin "\e[?1049h]"))
   # (enable-raw-mode)
   
-  (jermbox/init)
-  (jermbox/select-output-mode jermbox/output-256)
-  (jermbox/select-input-mode 2)
-  (jermbox/clear)
-  (jermbox/present)
+  (jermbox/init-jermbox)
 
   (reset-editor-state) 
   (editor-open args))
@@ -1148,7 +1098,7 @@
   # (disable-raw-mode)
   # (when (= (os/which) :linux)
   #   (prin "\e[?1049l"))
-  (jermbox/shutdown)
+  (jermbox/shutdown-jermbox)
   )
 
 # TODO: Write function tests
