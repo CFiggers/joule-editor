@@ -4,6 +4,7 @@
 
 (defn init-jermbox []
   (jermbox/init)
+  (jermbox/select-input-mode (bor jermbox/input-esc jermbox/input-mouse))
   (jermbox/select-output-mode jermbox/output-256))
 
 (defn shutdown-jermbox []
@@ -31,10 +32,12 @@
    65516 :downarrow
    65515 :leftarrow
    65514 :rightarrow
-   65513 :mousemiddle
-   65512 :mouserelease
-   65511 :mousewheelup
-   65510 :mousewheeldown
+   65513 :mouseleft
+   65512 :mouseright
+   65511 :mousemiddle
+   65510 :mouserelease
+   65509 :mousewheelup
+   65508 :mousewheeldown
 
    #1009 :ctrlleftarrow
    #1010 :ctrlrightarrow
@@ -54,17 +57,12 @@
    :character (jermbox/event-character env)})
 
 (defn main-loop [env]
-  (var continue true)
-  (var keystrokes @[])
-  (while continue
-    (set keystrokes @[])
-    (jermbox/poll-event env)
-    (array/push keystrokes (get-key-struct env))
+  (var keystrokes @[]) 
+  (jermbox/poll-event env)
+  (array/push keystrokes (get-key-struct env))
+  (when (deep= keystrokes @[{:character 0 :key 27 :modifier 0}])
     (while (jermbox/peek-event env 10)
-      (array/push keystrokes (get-key-struct env)))
-    (when (= (first keystrokes) jermbox/key-ctrl-q)
-      (set continue false))
-    (set continue false))
+      (array/push keystrokes (get-key-struct env))))
   keystrokes)
 
 (defn convert-single [ar]
