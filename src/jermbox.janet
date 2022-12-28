@@ -1,8 +1,7 @@
 (import jermbox)
 
-(varglobal "env" (jermbox/init-event))
-
 (defn init-jermbox []
+  (setdyn :ev (jermbox/init-event))
   (jermbox/init)
   (jermbox/select-input-mode (bor jermbox/input-esc jermbox/input-mouse))
   (jermbox/select-output-mode jermbox/output-256))
@@ -90,8 +89,8 @@
          67 :ctrlshiftrightarrow
          68 :ctrlshiftleftarrow)))
 
-(defn read-key []
-  (let [jermbox-array (main-loop env)]
+(defn read-key [ev]
+  (let [jermbox-array (main-loop ev)]
     (if (= 1 (length jermbox-array))
       (convert-single (first jermbox-array))
       (convert-multiple jermbox-array))))

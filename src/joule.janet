@@ -659,7 +659,7 @@
 (varfn jump-to-modal [])
 
 (defn editor-process-keypress [&opt in-key]
-  (let [key (jermbox/read-key) #Blocks here waiting on keystroke
+  (let [key (jermbox/read-key (dyn :ev)) #Blocks here waiting on keystroke
         cx (editor-state :cx)
         cy (editor-state :cy)
         v-offset (editor-state :rowoffset)
@@ -834,70 +834,74 @@
     (update-minput |(string/insert $ mx char))
     (move-cursor :right)))
 
+# TODO: Consolidate modal-process-keypress into editor-process-keypress?
+
 (defn modal-process-keypress [kind] 
-  (let [key (jermbox/read-key)
+  (let [key (jermbox/read-key (dyn :ev))
         at-home (= (editor-state :cx) (modal-home))
         at-end (= (editor-state :cx)
                   (+ (modal-home)
                      (safe-len (editor-state :modalinput))))]
-    (case key
-      :ctrl-q (set modal-cancel true)
-      :ctrl-n (break) 
-      :ctrl-l (break) 
-      :ctrl-s (break) 
-      :ctrl-d (enter-debugger)
-      :ctrl-w (break) 
-      :ctrl-f (break) 
-      :ctrl-z (break) # TODO: Undo in modals 
-      :ctrl-y (break) # TODO: Redo in modals
+    (if (int? key)
+      (modal-handle-typing key) 
+      (case key
+        :ctrl-q (set modal-cancel true) 
+        :ctrl-n (break) 
+        :ctrl-l (break) 
+        :ctrl-s (break) 
+        :ctrl-d (enter-debugger)
+        :ctrl-w (break) 
+        :ctrl-f (break) 
+        :ctrl-z (break) # TODO: Undo in modals 
+        :ctrl-y (break) # TODO: Redo in modals
       
-      :enter (set modal-active false)
+        :enter (set modal-active false)
 
-      # BUG: This is broken when backspacing at end of current line
-      :backspace (cond at-home (break)
-                       (delete-char-modal :backspace))
-      :del (cond at-end (break)
-                 (delete-char-modal :delete))
+        # BUG: This is broken when backspacing at end of current line
+        :backspace (cond at-home (break)
+                         (delete-char-modal :backspace))
+        :del (cond at-end (break)
+                   (delete-char-modal :delete))
 
-      :pageup (move-cursor-modal :home)
-      :pagedown (move-cursor-modal :end)
+        :pageup (move-cursor-modal :home)
+        :pagedown (move-cursor-modal :end)
 
-      # TODO: Implement autocompletion
-      :tab (break)
+        # TODO: Implement autocompletion
+        :tab (break)
 
-      :uparrow (cond
-                   at-home (break)
-                   (move-cursor :left))
-      :downarrow (cond
-                    at-end (break)
-                    (move-cursor :right))
-      :leftarrow (cond
-                   at-home (break)
-                   (move-cursor :left))
-      :rightarrow (cond
-                    at-end (break)
-                    (move-cursor :right))
+        :uparrow (cond
+                     at-home (break)
+                     (move-cursor :left))
+        :downarrow (cond
+                      at-end (break)
+                      (move-cursor :right))
+        :leftarrow (cond
+                     at-home (break)
+                     (move-cursor :left))
+        :rightarrow (cond
+                      at-end (break)
+                      (move-cursor :right))
 
-      # TODO: Implement these
-      :ctrluparrow (break)
-      :ctrldownarrow (break)
-      :ctrlleftarrow (break)
-      :ctrlrightarrow (break)
+        # TODO: Implement these
+        :ctrluparrow (break)
+        :ctrldownarrow (break)
+        :ctrlleftarrow (break)
+        :ctrlrightarrow (break)
       
-      # TODO: Shift + arrows
-      :shiftleftarrow (break)
-      :shiftrightarrow (break)
-      :shiftuparrow (break)
-      :shiftdownarrow (break)
+        # TODO: Shift + arrows
+        :shiftleftarrow (break)
+        :shiftrightarrow (break)
+        :shiftuparrow (break)
+        :shiftdownarrow (break)
 
-      :shiftdel (break)
+        :shiftdel (break)
 
-      :home (move-cursor-modal :home)
-      :end (move-cursor-modal :end)
+        :home (move-cursor-modal :home)
+        :end (move-cursor-modal :end)
 
-      :esc (set modal-cancel true)
+        :esc (set modal-cancel true)
       
-      (modal-handle-typing key))))
+        (break)))))
 
 (defn modal [message kind callback &named modalendput] 
   (when modal-rethome
@@ -985,7 +989,7 @@
 
 (defn move-to-match []
   (assert (> (safe-len (editor-state :search-results)) 0)) 
-  #Search rest of current row
+  # Search rest of current row
   (let [all-results (editor-state :search-results)
         filter-fn (fn [[y x]] (or (> y (abs-y)) (and (= y (abs-y)) (> x (abs-x)))))
         next-results (sort (filter filter-fn all-results))
@@ -1005,7 +1009,7 @@
     (return-to-temp-pos)
     (move-to-match)) 
 
-  (let [key (read-key)
+  (let [key (jermbox/read-key (dyn :ev))
         exit-search |(do (clear-temp-pos)
                          (edset :search-active nil))
         cancel-search |(do (return-to-temp-pos)
@@ -1089,9 +1093,6 @@
     (set modal-rethome false)
     (confirm-lose-changes callback)))
 
-(defn load-config [] 
-  )
-
 (defn init [args]
   # (when (= (os/which) :linux) 
   #   (prin "\e[?1049h]"))
@@ -1105,9 +1106,8 @@
 (defn exit []
   (prin "\x1b[2J")
   (prin "\x1b[H")
-  # (disable-raw-mode)
-  # (when (= (os/which) :linux)
-  #   (prin "\e[?1049l"))
+  
+  # TODO: Figure out how to make jermbox return to previous terminal context
   (jermbox/shutdown-jermbox)
   )
 
@@ -1115,13 +1115,10 @@
 # TODO: Plugins?
 
 (defn main [& args]
-  (init args)
-
-  (try (while (not j-quit)
-         (editor-refresh-screen)
-         (editor-process-keypress))
-       ([err fib]
-        (do (exit)
-            (propagate err fib))))
-  
-  (exit))
+  (defer (exit)
+         (init args)
+         (try (while (not j-quit)
+                (editor-refresh-screen)
+                (editor-process-keypress))
+              ([err fib]
+               (propagate err fib)))))
