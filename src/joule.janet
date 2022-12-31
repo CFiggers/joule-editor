@@ -176,7 +176,7 @@
       (edup :cx |(df $ d)))))
 
 (defn move-cursor [direction]
-  (case direction 
+  (case direction
     :up (edup :cy dec)
     :down (edup :cy inc)
     :left (edup :cx dec)
@@ -184,7 +184,8 @@
     :home (move-cursor-home)
     :end (move-cursor-end)
     :word-left (move-word :left)
-    :word-right (move-word :right)))
+    :word-right (move-word :right)
+    :in-place (break)))
 
 (defn editor-scroll []
   (let [cx (editor-state :cx)
@@ -218,7 +219,7 @@
     (move-cursor direction)
     # Move cursor to either end of new line (if shorter)
     # or same point on line as x memory (if longer)
-    (let [f (case direction :up dec :down inc)]
+    (let [f (case direction :up dec :down inc identity)]
       (edset :cx (min (max (editor-state :rememberx) cx)
                       (max-x (f currenty)))))))
 
@@ -666,14 +667,15 @@
         h-offset (editor-state :coloffset)]
     (cond 
       (int? key) (editor-handle-typing key)
-      (tuple? key) (if (= (first key) :mouseleft)
-                         (let [offset (dec (editor-state :leftmargin))
-                               click-y (in key 2)
-                               click-x (min (max-x click-y)
-                                            (- (in key 1) offset))] 
-                           (edset :cx click-x) 
-                           (edset :cy click-y))
-                         (break))  
+      (tuple? key) (case (first key)
+                     :mouseleft (let [offset (dec (editor-state :leftmargin))
+                                      click-y (in key 2)
+                                      click-x (min (max-x (+ click-y v-offset))
+                                                   (- (in key 1) offset))]
+                                  (edset :cx click-x)
+                                  (edset :cy click-y))
+                     
+                     (break))  
       (case key 
           :ctrl-q (close-file :quit)
           :ctrl-n (toggle-line-numbers)
@@ -786,8 +788,14 @@
           :mouseright (break)
           :mousemiddle (break)
           :mouserelease (break)
-          :mousewheelup (break)
-          :mousewheeldown (break)
+
+          :mousewheelup (unless (= 0 (editor-state :rowoffset)) 
+                                (edup :rowoffset dec) 
+                                (move-cursor-with-mem :in-place)
+                                (update-x-memory cx))
+          :mousewheeldown (do (edup :rowoffset inc)
+                              (move-cursor-with-mem :in-place)
+                              (update-x-memory cx))
     
           # TODO: Function row
     
