@@ -1113,10 +1113,6 @@
     (confirm-lose-changes callback)))
 
 (defn init [args]
-  # (when (= (os/which) :linux) 
-  #   (prin "\e[?1049h]"))
-  # (enable-raw-mode)
-  
   (jermbox/init-jermbox)
 
   (reset-editor-state) 
