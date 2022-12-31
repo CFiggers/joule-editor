@@ -41,3 +41,6 @@
 
 (defn load-jdn [where]
   (jdn/decode (slurp where)))
+
+(defn log [content]
+  (spit "log.txt" (string content "\n") :a))
