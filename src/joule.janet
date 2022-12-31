@@ -1,34 +1,13 @@
 (use janet-termios)
-(use "./core-fns")
+(import spork/path)
+(import "./jermbox")
+(use "./syntax-highlights")
+(use "./utilities")
 
 ### Definitions ###
 
 (def version
-  "0.0.3")
-
-(def keymap
-  {9 :tab
-   13 :enter
-   27 :esc
-   127 :backspace
-   1000 :leftarrow
-   1001 :rightarrow
-   1002 :uparrow
-   1003 :downarrow
-   1004 :pageup
-   1005 :pagedown
-   1006 :home
-   1007 :end
-   1008 :del
-   1009 :ctrlleftarrow
-   1010 :ctrlrightarrow
-   1011 :ctrluparrow
-   1012 :ctrldownarrow
-   1013 :shiftleftarrow
-   1014 :shiftrightarrow
-   1015 :shiftuparrow
-   1016 :shiftdownarrow
-   1017 :shiftdel})
+  "0.0.4")
 
 ### Data ###
 
@@ -37,6 +16,18 @@
 # TODO: Implement multiple "tabs"/buffers open simultaneously
 
 (var editor-state @{})
+
+(defn get-user-config []
+  (def user-home ((os/environ) "HOME"))
+  (def joulerc-path (path/join user-home ".joulerc"))
+  (if (nil? (os/stat joulerc-path))
+    (let [default-config @{:scrollpadding 5
+                           :tabsize 2
+                           :indentwith :spaces
+                           :numtype true}]
+      (save-jdn default-config joulerc-path)
+      default-config)
+    (load-jdn joulerc-path)))
 
 (defn reset-editor-state []
      (set editor-state
@@ -65,46 +56,13 @@
                           :indentwith :spaces
                           :numtype :on}}))
 
-### Utility Functions ###
-
-(defn esc [c]
-  (string "\x1b[" c))
-
-(defn ctrl-key [k]
-  (band k 0x1f))
-
-(defn safe-len [arg]
-  (try (length arg) ([err fib] 0)))
-
-(defn zipwith [f col1 col2]
-  (var result @[])
-  (let [n (min (safe-len col1) (safe-len col2))]
-    (for i 0 n
-         (array/push result (f (get col1 i) (get col2 i))))
-    result))
+### Editor State Functions ###
 
 (defn abs-x []
   (+ (editor-state :cx) (editor-state :coloffset)))
 
 (defn abs-y []
   (+ (editor-state :cy) (editor-state :rowoffset)))
-
-(defn string/insert [str at & xs]
-  (def at (if (= -1 at) (length str) at))
-  (assert (<= at (length str)) 
-          "Can't string/insert: `at` larger than `str`")
-  (string
-     (string/slice str 0 at)
-     (string ;xs)
-     (string/slice str (- (inc (- (length str) at))))))
-
-(defn string/cut [str at &opt until]
-  (default until at)
-  (assert (>= at 0) "Can't string/cut: `at` is negative")
-  (assert (>= until at) "Can't string/cut: `until` is less than `at`")
-  (string
-   (string/slice str 0 at)
-   (string/slice str (- until (length str)))))
 
 (defn edset [& key-v]
   (assert (= 0 (% (safe-len key-v) 2)))
@@ -124,52 +82,6 @@
 
 (defn update-minput [f]
   (edup :modalinput f))
-
-(defn color 
-  ```
-  Return `text` surrounded by ANSI color codes corresponding to `color-key`.
-   
-  Options are: 
-  - :black 
-  - :red
-  - :green 
-  - :yellow
-  - :blue 
-  - :magenta
-  - :cyan 
-  - :white
-  - :brown
-  - :default
-  ```
-  [text color-key]
-  (if-let [color-code
-           (case color-key
-             :black "0;30" :red "0;31"
-             :green "0;32" :yellow "0;33"
-             :blue "0;34" :magenta "38;2;197;134;192"
-             :cyan "0;36" :white "0;37"
-             :brown "38;2;206;145;120"
-             :cream-green "38;2;181;206;168"
-             :powder-blue "38;2;156;220;254"
-             :drab-green "38;2;106;153;85" 
-             :default "0;39")] 
-    (string "\e[" color-code "m" text "\e[0;39m")
-    text))
-
-(defn bg-color 
-  [text color-key]
-  (if-let [color-code
-           (case color-key
-             :black "0;40" :red "0;41"
-             :green "0;42" :yellow "0;43"
-             :blue "0;44" :magenta "0;45"
-             :cyan "0;46" :white "0;47"
-             :default "0;49"
-             :dull-blue "48;2;38;79;120")]
-    (string "\e[" color-code "m" text "\e[0;49m")
-    text))
-
-### Editor State Functions ###
 
 (defn send-status-msg [msg]
   (edset :statusmsg msg
@@ -264,7 +176,7 @@
       (edup :cx |(df $ d)))))
 
 (defn move-cursor [direction]
-  (case direction 
+  (case direction
     :up (edup :cy dec)
     :down (edup :cy inc)
     :left (edup :cx dec)
@@ -272,12 +184,13 @@
     :home (move-cursor-home)
     :end (move-cursor-end)
     :word-left (move-word :left)
-    :word-right (move-word :right)))
+    :word-right (move-word :right)
+    :in-place (break)))
 
 (defn editor-scroll []
   (let [cx (editor-state :cx)
         cy (editor-state :cy)]
-    
+
     # Cursor off screen Top
     (when (< cy 0) 
       (do (when (> (editor-state :rowoffset) 0) 
@@ -306,7 +219,7 @@
     (move-cursor direction)
     # Move cursor to either end of new line (if shorter)
     # or same point on line as x memory (if longer)
-    (let [f (case direction :up dec :down inc)]
+    (let [f (case direction :up dec :down inc identity)]
       (edset :cx (min (max (editor-state :rememberx) cx)
                       (max-x (f currenty)))))))
 
@@ -328,23 +241,11 @@
 # TODO: Janet Long strings w/ ``` syntax
 # TODO: Extensible syntax highlighting schemes for different languages
 
-(def highlight-rules
-  (peg/compile ~{:comment (replace (<- (* "#" (any 1))) ,|(color $ :drab-green))
-                 :string (replace (<- (* "\"" (to "\"") "\"")) ,|(color $ :brown))
-                 :ws (<- (set " \t\r\f\n\0\v"))
-                 :delim (+ :ws (set "([{\"`}])"))
-                 :symchars (+ (range "09" "AZ" "az" "\x80\xFF") (set "!$%&*+-./:<?=>@^_"))
-                 :numbers (replace (<- (some (+ :d "."))) ,|(color $ :cream-green))
-                 :keyword (replace (<- (* ":" (some :symchars))) ,|(color $ :magenta)) 
-                 :symbol (replace (<- (some (+ :symchars "-"))) ,|(color $ :powder-blue))
-                 :special (replace (* (<- (+ ,;core-fns ,;special-forms)) :ws) ,|(string (color $0 :magenta) $1)) 
-                 :else (<- 1)
-                 :value (+ :comment :string :numbers :keyword :special :symbol :ws :else)
-                 :main (some :value)}))
-
 (defn search-peg []
-  (let [search-str (if (and (editor-state :search-active) (editor-state :modalinput))
-                     ~(replace (<- ,(editor-state :modalinput)) ,| (bg-color $ :dull-blue)) 
+  (let [search-str (if (and (editor-state :search-active) 
+                            (editor-state :modalinput))
+                     ~(replace (<- ,(editor-state :modalinput)) 
+                               ,| (bg-color $ :dull-blue)) 
                      -1)]
     ~{:search ,search-str
       :else (<- 1) 
@@ -358,7 +259,9 @@
 
 (defn insert-highlight [str]
   (if (= str "") "" 
-    (string/join (peg/match highlight-rules str))))
+    (string/join
+     (peg/match (or (highlight-rules (editor-state :filetype))
+                    ~(<- (some 1))) str))))
 
 ### Output ###
 
@@ -423,6 +326,7 @@
                   "Ctrl + s                 save"
                   "Ctrl + a              save as"
                   "Ctrl + f               search"
+                  "Ctrl + g       go (to line #)"
                   "Ctrl + c                 copy"
                   "Ctrl + p                paste"
                   "Ctrl + n       toggle numbers"])
@@ -505,6 +409,7 @@
 (defn add-status-bar [rows]
   (let [leftpad (string/repeat " " (get-margin))
         filename (editor-state :filename)
+        # TODO: Handle Modal cursor position, like "M:0" at modal-home
         cursor-pos (string (inc (abs-y)) ":" (abs-x))
         midpad (string/repeat " " (- (editor-state :screencols)
                                   ;(map safe-len [filename cursor-pos leftpad])
@@ -608,7 +513,8 @@
     (clip-copy-single kind (abs-y) 
                       ((editor-state :select-from) :x)
                       ((editor-state :select-to) :x))  
-    (clip-copy-multi kind)))
+    (clip-copy-multi kind))
+  (send-status-msg "Tip: Ctrl + p to paste."))
 
 (varfn editor-handle-typing [])
 
@@ -753,117 +659,148 @@
 (varfn find-in-text-modal [])
 (varfn jump-to-modal [])
 
-(defn editor-process-keypress [&opt in-key]
-  (let [key (or in-key (read-key)) #Blocks here waiting on keystroke
+(defn editor-process-keypress [&opt in-key] 
+  (let [key (or in-key (jermbox/read-key (dyn :ev))) #Blocks here waiting on keystroke
         cx (editor-state :cx)
         cy (editor-state :cy)
         v-offset (editor-state :rowoffset)
         h-offset (editor-state :coloffset)]
-    (case (get keymap key key)
-      (ctrl-key (chr "q")) (close-file :quit)
-      (ctrl-key (chr "n")) (toggle-line-numbers)
-      (ctrl-key (chr "l")) (load-file-modal)
-      (ctrl-key (chr "s")) (save-file) 
-      (ctrl-key (chr "a")) (save-file-as) 
-      (ctrl-key (chr "d")) (enter-debugger) 
-      (ctrl-key (chr "w")) (close-file :close)
-      (ctrl-key (chr "f")) (find-in-text-modal)
-      (ctrl-key (chr "g")) (jump-to-modal)
-      (ctrl-key (chr "z")) (break) # TODO: Undo in normal typing
-      (ctrl-key (chr "y")) (break) # TODO: Redo in normal typing
-      
-      (ctrl-key (chr "c")) (copy-to-clipboard :copy)
-      (ctrl-key (chr "x")) (copy-to-clipboard :cut)
-      (ctrl-key (chr "v")) (paste-clipboard)
-      (ctrl-key (chr "p")) (paste-clipboard)
+    (cond 
+      (int? key) (editor-handle-typing key)
+      (tuple? key) (case (first key)
+                     :mouseleft (let [offset (dec (editor-state :leftmargin))
+                                      click-y (in key 2)
+                                      click-x (min (max-x (+ click-y v-offset))
+                                                   (- (in key 1) offset))]
+                                  (edset :cx click-x)
+                                  (edset :cy click-y))
+                     
+                     (break))  
+      (case key 
+          :ctrl-q (close-file :quit)
+          :ctrl-n (toggle-line-numbers)
+          :ctrl-l (load-file-modal)
+          :ctrl-s (save-file) 
+          :ctrl-a (save-file-as) 
+          :ctrl-d (enter-debugger) 
+          :ctrl-w (close-file :close)
+          :ctrl-f (find-in-text-modal)
+          :ctrl-g (jump-to-modal)
+          :ctrl-z (break) # TODO: Undo in normal typing
+          :ctrl-y (break) # TODO: Redo in normal typing
+          
+          :ctrl-c (copy-to-clipboard :copy)
+          :ctrl-x (copy-to-clipboard :cut)
+          :ctrl-v (paste-clipboard)
+          :ctrl-p (paste-clipboard)
+    
+          # If on home page of file
+          :pageup (if (= 0 v-offset)
+                    (do (move-cursor :home)
+                        (edset :cy 0))
+                    (move-viewport :pageup))
+          :pagedown (move-viewport :pagedown)
+    
+          :home (move-cursor :home)
+          :end (move-cursor :end)
+    
+          # TODO: Implement smarter tab stops
+          :tab (repeat 4 (editor-handle-typing 32))
+    
+          # If cursor at margin and viewport at far left
+          :leftarrow (do (when (selection-active?) (clear-selection))
+                         (if (= (abs-x) 0)
+                           (wrap-to-end-of-prev-line)
+                           (move-cursor :left))
+                         (edset :rememberx 0))
+    
+          # If cursor at end of current line, accounting for horizontal scrolling
+          :rightarrow (do (when (selection-active?) (clear-selection))
+                          (if (= (abs-x) (rowlen (abs-y)))
+                            (wrap-to-start-of-next-line)
+                            (move-cursor :right))
+                          (edset :rememberx 0))
+    
+          # If on top row of file
+          :uparrow (do (when (selection-active?) (clear-selection))
+                       (if (= (abs-y) 0)
+                         (move-cursor :home)
+                         (move-cursor-with-mem :up))
+                       (update-x-memory cx))
+    
+          :downarrow (do (when (selection-active?) (clear-selection))
+                         (move-cursor-with-mem :down)
+                         (update-x-memory cx))
+          
+          :ctrlleftarrow (move-cursor :word-left)
+          :ctrlrightarrow (move-cursor :word-right)
+          
+          # TODO: Multiple cursors?
+          :ctrluparrow (break)
+          :ctrldownarrow (break)
+          
+          :shiftleftarrow (if (= (abs-x) 0)
+                            (break)
+                            (handle-selection :left))
+          :shiftrightarrow (if (= (abs-x) (rowlen (abs-y)))
+                            (break)
+                            (handle-selection :right))
+          
+          # TODO: Shift + Ctrl + Arrows
+          :ctrlshiftuparrow (break)
+          :ctrlshiftdownarrow (break)
+          :ctrlshiftrightarrow (break)
+          :ctrlshiftleftarrow (break)
+    
+          # TODO: Handling selection up and down
+          :shiftuparrow (break)
+          :shiftdownarrow (break)
+    
+          :shiftdel (delete-row)
+          
+          :enter (carriage-return)
+    
+          :esc (when (selection-active?) (clear-selection))
+    
+          :backspace (cond
+                       #On top line and home row of file; do nothing
+                       (and (= (abs-x) 0) (= (abs-y) 0)) (break)
+                       #Cursor below last file line; cursor up
+                       (> (abs-y) (dec (safe-len (editor-state :erows)))) (move-cursor :up)
+                       #Cursor at margin and viewport far left
+                       (= (abs-x) 0) (backspace-back-to-prev-line)
+                       #Otherwise
+                       (delete-char :backspace))
+    
+          :del (cond 
+                 # On last line and end of row of file; do nothing
+                 (and (= (abs-x) (rowlen (abs-y)))
+                      (= (abs-y) (dec (safe-len (editor-state :erows))))) (break)
+                 # Cursor at end of current line
+                 (= cx (- (rowlen cy) h-offset)) (delete-next-line-up) 
+                 # Cursor below last file line; cursor up
+                 (> (abs-y) (safe-len (editor-state :erows))) (break)
+                 # Otherwise
+                 (delete-char :delete))
+    
+          # TODO: Process mouse clicks 
+          :mouseleft (break)
+          :mouseright (break)
+          :mousemiddle (break)
+          :mouserelease (break)
 
-      # If on home page of file
-      :pageup (if (= 0 v-offset)
-                (do (move-cursor :home)
-                    (edset :cy 0))
-                (move-viewport :pageup))
-      :pagedown (move-viewport :pagedown)
-
-      :home (move-cursor :home)
-      :end (move-cursor :end)
-
-      # TODO: Implement smarter tab stops
-      :tab (repeat 4 (editor-handle-typing 32))
-
-      # If cursor at margin and viewport at far left
-      :leftarrow (do (when (selection-active?) (clear-selection))
-                     (if (= (abs-x) 0)
-                       (wrap-to-end-of-prev-line)
-                       (move-cursor :left))
-                     (edset :rememberx 0))
-
-      # If cursor at end of current line, accounting for horizontal scrolling
-      :rightarrow (do (when (selection-active?) (clear-selection))
-                      (if (= (abs-x) (rowlen (abs-y)))
-                        (wrap-to-start-of-next-line)
-                        (move-cursor :right))
-                      (edset :rememberx 0))
-
-      # If on top row of file
-      :uparrow (do (when (selection-active?) (clear-selection))
-                   (if (= (abs-y) 0)
-                     (move-cursor :home)
-                     (move-cursor-with-mem :up))
-                   (update-x-memory cx))
-
-      :downarrow (do (when (selection-active?) (clear-selection))
-                     (move-cursor-with-mem :down)
-                     (update-x-memory cx))
-      
-      :ctrlleftarrow (move-cursor :word-left)
-      :ctrlrightarrow (move-cursor :word-right)
-      
-      # TODO: Multiple cursors?
-      :ctrluparrow (break)
-      :ctrldownarrow (break)
-      
-      # TODO: Shift + arrows
-      :shiftleftarrow (if (= (abs-x) 0)
-                        (break)
-                        (handle-selection :left))
-      :shiftrightarrow (if (= (abs-x) (rowlen (abs-y)))
-                        (break)
-                        (handle-selection :right))
-      # TODO: Handling selection up and down
-      :shiftuparrow (break)
-      :shiftdownarrow (break)
-
-      :shiftdel (delete-row)
-      
-      :enter (carriage-return)
-
-      :esc (when (selection-active?) (clear-selection))
-
-      :backspace (cond
-                   #On top line and home row of file; do nothing
-                   (and (= (abs-x) 0) (= (abs-y) 0)) (break)
-                   #Cursor below last file line; cursor up
-                   (> (abs-y) (dec (safe-len (editor-state :erows)))) (move-cursor :up)
-                   #Cursor at margin and viewport far left
-                   (= (abs-x) 0) (backspace-back-to-prev-line)
-                   #Otherwise
-                   (delete-char :backspace))
-
-      :del (cond 
-             # On last line and end of row of file; do nothing
-             (and (= (abs-x) (rowlen (abs-y)))
-                  (= (abs-y) (dec (safe-len (editor-state :erows))))) (break)
-             # Cursor at end of current line
-             (= cx (- (rowlen cy) h-offset)) (delete-next-line-up) 
-             # Cursor below last file line; cursor up
-             (> (abs-y) (safe-len (editor-state :erows))) (break)
-             # Otherwise
-             (delete-char :delete))
-
-      # TODO: Function row
-
-      # Default 
-      (editor-handle-typing key))))
+          :mousewheelup (unless (= 0 (editor-state :rowoffset)) 
+                                (edup :rowoffset dec) 
+                                (move-cursor-with-mem :in-place)
+                                (update-x-memory cx))
+          :mousewheeldown (do (edup :rowoffset inc)
+                              (move-cursor-with-mem :in-place)
+                              (update-x-memory cx))
+    
+          # TODO: Function row
+    
+          # Default 
+          (break)))))
 
 ### Modals ###
 
@@ -913,70 +850,77 @@
     (update-minput |(string/insert $ mx char))
     (move-cursor :right)))
 
+# TODO: Consolidate modal-process-keypress into editor-process-keypress?
+
 (defn modal-process-keypress [kind] 
-  (let [key (read-key)
+  (let [key (jermbox/read-key (dyn :ev))
         at-home (= (editor-state :cx) (modal-home))
-        at-end (= (editor-state :cx) 
+        at-end (= (editor-state :cx)
                   (+ (modal-home)
                      (safe-len (editor-state :modalinput))))]
-    (case (get keymap key key)
-      (ctrl-key (chr "q")) (set modal-cancel true)
-      (ctrl-key (chr "n")) (break) 
-      (ctrl-key (chr "l")) (break) 
-      (ctrl-key (chr "s")) (break) 
-      (ctrl-key (chr "d")) (enter-debugger)
-      (ctrl-key (chr "w")) (break) 
-      (ctrl-key (chr "f")) (break) 
-      (ctrl-key (chr "z")) (break) # TODO: Undo in modals 
-      (ctrl-key (chr "y")) (break) # TODO: Redo in modals
+    (cond 
+      (int? key) (modal-handle-typing key)
+      (tuple? key) (if (= (first key) :mouseleft)
+                         (set modal-cancel true)
+                         (break))
+      (case key
+        :ctrl-q (set modal-cancel true) 
+        :ctrl-n (break) 
+        :ctrl-l (break) 
+        :ctrl-s (break) 
+        :ctrl-d (enter-debugger)
+        :ctrl-w (break) 
+        :ctrl-f (break) 
+        :ctrl-z (break) # TODO: Undo in modals 
+        :ctrl-y (break) # TODO: Redo in modals
       
-      :enter (set modal-active false)
+        :enter (set modal-active false)
 
-      # BUG: This is broken when backspacing at end of current line
-      :backspace (cond at-home (break)
-                       (delete-char-modal :backspace))
-      :del (cond at-end (break)
-                 (delete-char-modal :delete))
+        # BUG: This is broken when backspacing at end of current line
+        :backspace (cond at-home (break)
+                         (delete-char-modal :backspace))
+        :del (cond at-end (break)
+                   (delete-char-modal :delete))
 
-      :pageup (move-cursor-modal :home)
-      :pagedown (move-cursor-modal :end)
+        :pageup (move-cursor-modal :home)
+        :pagedown (move-cursor-modal :end)
 
-      # TODO: Implement autocompletion
-      :tab (break)
+        # TODO: Implement autocompletion
+        :tab (break)
 
-      :uparrow (cond
-                   at-home (break)
-                   (move-cursor :left))
-      :downarrow (cond
-                    at-end (break)
-                    (move-cursor :right))
-      :leftarrow (cond
-                   at-home (break)
-                   (move-cursor :left))
-      :rightarrow (cond
-                    at-end (break)
-                    (move-cursor :right))
+        :uparrow (cond
+                     at-home (break)
+                     (move-cursor :left))
+        :downarrow (cond
+                      at-end (break)
+                      (move-cursor :right))
+        :leftarrow (cond
+                     at-home (break)
+                     (move-cursor :left))
+        :rightarrow (cond
+                      at-end (break)
+                      (move-cursor :right))
 
-      # TODO: Implement these
-      :ctrluparrow (break)
-      :ctrldownarrow (break)
-      :ctrlleftarrow (break)
-      :ctrlrightarrow (break)
+        # TODO: Implement these
+        :ctrluparrow (break)
+        :ctrldownarrow (break)
+        :ctrlleftarrow (break)
+        :ctrlrightarrow (break)
       
-      # TODO: Shift + arrows
-      :shiftleftarrow (break)
-      :shiftrightarrow (break)
-      :shiftuparrow (break)
-      :shiftdownarrow (break)
+        # TODO: Shift + arrows
+        :shiftleftarrow (break)
+        :shiftrightarrow (break)
+        :shiftuparrow (break)
+        :shiftdownarrow (break)
 
-      :shiftdel (break)
+        :shiftdel (break)
 
-      :home (move-cursor-modal :home)
-      :end (move-cursor-modal :end)
+        :home (move-cursor-modal :home)
+        :end (move-cursor-modal :end)
 
-      :esc (set modal-cancel true)
+        :esc (set modal-cancel true)
       
-      (modal-handle-typing key))))
+        (break)))))
 
 (defn modal [message kind callback &named modalendput] 
   (when modal-rethome
@@ -1012,14 +956,24 @@
 
 ### File I/O ###
 
+(defn detect-filetype [filename]
+  (if-let [filen (string/split "." filename)]
+    (case (last filen)
+      "janet" :janet
+      "c" :c
+      "md" :md
+      :txt)
+    :txt))
+
 (varfn confirm-lose-changes [])
 
 (defn load-file [filename]
   (let [erows (string/split "\n" (try (slurp filename) 
                                       ([e f] (spit filename "")
                                              (slurp filename))))
-        callback |(edset :filename filename
-                         :erows erows)]
+        callback |(do (edset :filename filename
+                             :erows erows
+                             :filetype (detect-filetype filename)))]
     (confirm-lose-changes callback)))
 
 (defn ask-filename-modal []
@@ -1054,7 +1008,7 @@
 
 (defn move-to-match []
   (assert (> (safe-len (editor-state :search-results)) 0)) 
-  #Search rest of current row
+  # Search rest of current row
   (let [all-results (editor-state :search-results)
         filter-fn (fn [[y x]] (or (> y (abs-y)) (and (= y (abs-y)) (> x (abs-x)))))
         next-results (sort (filter filter-fn all-results))
@@ -1074,15 +1028,15 @@
     (return-to-temp-pos)
     (move-to-match)) 
 
-  (let [key (read-key)
+  (let [key (jermbox/read-key (dyn :ev))
         exit-search |(do (clear-temp-pos)
                          (edset :search-active nil))
         cancel-search |(do (return-to-temp-pos)
                            (exit-search)
                            (editor-refresh-screen))]
-    (case (get keymap key key)
-      (ctrl-key (chr "q")) (cancel-search)
-      (ctrl-key (chr "d")) (enter-debugger)
+    (case key
+      :ctrl-q (cancel-search)
+      :ctrl-d (enter-debugger)
 
       :tab (do (move-to-match)
                  (find-next))
@@ -1158,31 +1112,28 @@
     (set modal-rethome false)
     (confirm-lose-changes callback)))
 
-(defn load-config [] 
-  )
-
 (defn init [args]
-  (when (= (os/which) :linux) 
-    (prin "\e[?1049h]"))
-  (enable-raw-mode)
+  (jermbox/init-jermbox)
+
   (reset-editor-state) 
   (editor-open args))
 
 (defn exit []
   (prin "\x1b[2J")
   (prin "\x1b[H")
-  (disable-raw-mode)
-  (when (= (os/which) :linux)
-    (prin "\e[?1049l")))
+  
+  # TODO: Figure out how to make jermbox return to previous terminal context
+  (jermbox/shutdown-jermbox)
+  )
 
 # TODO: Write function tests
 # TODO: Plugins?
 
 (defn main [& args]
-  (init args)
-
-  (while (not j-quit)
-    (editor-refresh-screen)
-    (editor-process-keypress))
-
-  (exit))
+  (defer (exit)
+         (init args)
+         (try (while (not j-quit)
+                (editor-refresh-screen)
+                (editor-process-keypress))
+              ([err fib]
+               (propagate err fib)))))
