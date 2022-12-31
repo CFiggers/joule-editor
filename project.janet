@@ -9,5 +9,5 @@
 (declare-executable 
   :name "joule"
   :entry "src/joule.janet"
-  # :lflags ["-static"]
+  :lflags ["-static"]
   :install false)
