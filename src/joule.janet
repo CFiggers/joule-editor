@@ -658,15 +658,23 @@
 (varfn find-in-text-modal [])
 (varfn jump-to-modal [])
 
-(defn editor-process-keypress [&opt in-key]
-  (let [key (jermbox/read-key (dyn :ev)) #Blocks here waiting on keystroke
+(defn editor-process-keypress [&opt in-key] 
+  (let [key (or in-key (jermbox/read-key (dyn :ev))) #Blocks here waiting on keystroke
         cx (editor-state :cx)
         cy (editor-state :cy)
         v-offset (editor-state :rowoffset)
         h-offset (editor-state :coloffset)]
-    (if (int? key) 
-        (editor-handle-typing key)
-        (case key 
+    (cond 
+      (int? key) (editor-handle-typing key)
+      (tuple? key) (if (= (first key) :mouseleft)
+                         (let [offset (dec (editor-state :leftmargin))
+                               click-y (in key 2)
+                               click-x (min (max-x click-y)
+                                            (- (in key 1) offset))] 
+                           (edset :cx click-x) 
+                           (edset :cy click-y))
+                         (break))  
+      (case key 
           :ctrl-q (close-file :quit)
           :ctrl-n (toggle-line-numbers)
           :ctrl-l (load-file-modal)
@@ -842,8 +850,11 @@
         at-end (= (editor-state :cx)
                   (+ (modal-home)
                      (safe-len (editor-state :modalinput))))]
-    (if (int? key)
-      (modal-handle-typing key) 
+    (cond 
+      (int? key) (modal-handle-typing key)
+      (tuple? key) (if (= (first key) :mouseleft)
+                         (set modal-cancel true)
+                         (break))
       (case key
         :ctrl-q (set modal-cancel true) 
         :ctrl-n (break) 

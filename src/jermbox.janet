@@ -50,25 +50,31 @@
    
    })
 
-(defn get-key-struct [env]
-  {:key (jermbox/event-key env)
-   :modifier (jermbox/event-modifier env)
-   :character (jermbox/event-character env)})
+(defn get-key-struct [event]
+  {:key (jermbox/event-key event)
+   :modifier (jermbox/event-modifier event)
+   :character (jermbox/event-character event)
+   :x (jermbox/event-x event)
+   :y (jermbox/event-y event)})
 
-(defn main-loop [env]
+(defn main-loop [event]
   (var keystrokes @[]) 
-  (jermbox/poll-event env)
-  (array/push keystrokes (get-key-struct env))
-  (when (deep= keystrokes @[{:character 0 :key 27 :modifier 0}])
-    (while (jermbox/peek-event env 10)
-      (array/push keystrokes (get-key-struct env))))
+  (jermbox/poll-event event)
+  (array/push keystrokes (get-key-struct event))
+  (when (deep= keystrokes @[{:character 0 :key 27 :modifier 0 :x 0 :y 0}])
+    (while (jermbox/peek-event event 10)
+      (array/push keystrokes (get-key-struct event))))
   keystrokes)
 
-(defn convert-single [ar]
+(defn convert-single [ar] 
   (let [{:key key
-         :character char} ar
-        value (if (= 0 key) char key)]
-    (get keymap value value)))
+         :character char
+         :x x
+         :y y} ar]
+    (if (= key 65513)
+      [:mouseleft x y]
+      (let [value (if (= 0 key) char key)] 
+        (get keymap value value)))))
 
 (defn convert-multiple [ar]
   (case ((get ar 4) :character)
@@ -89,8 +95,8 @@
          67 :ctrlshiftrightarrow
          68 :ctrlshiftleftarrow)))
 
-(defn read-key [ev]
-  (let [jermbox-array (main-loop ev)]
+(defn read-key [event]
+  (let [jermbox-array (main-loop event)] 
     (if (= 1 (length jermbox-array))
       (convert-single (first jermbox-array))
       (convert-multiple jermbox-array))))
@@ -101,7 +107,9 @@
 
   (init-jermbox)
 
-  (read-key)
+  (read-key (dyn :ev))
+
+  (main-loop (dyn :ev))
 
   (do (init-jermbox)
       (read-key))
