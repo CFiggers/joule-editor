@@ -2,7 +2,7 @@
 
 The following diagram shows the first few layers deep (breadth-first) of functions that are invoked by the main function loop.
 
-Functions with an orange border come from the `janet-termios` library.
+Functions with an orange border come from the `janet-termios` library. Functions with a green border come from the `jermbox` submodule.
 
 ```mermaid
 %% Top Node 
@@ -13,19 +13,24 @@ classDef violet stroke:#862e9c
 classDef purple stroke:#5f3dc4
 classDef indigo stroke:#364fc7
 classDef blue stroke:#1864ab
-
+classDef green stroke:#5c940d
 classDef orange stroke:#e67700
 
 %% Functions
 %% idt(janet-termios)
-    idt.1(enable-raw-mode):::orange
-    idt.2(read-key):::orange
-    idt.3(disable-raw-mode):::orange
+    %% No longer used: idt.1(enable-raw-mode):::orange
+    %% No longer used: idt.2(read-key):::orange
+    %% No longer used: idt.3(disable-raw-mode):::orange
     idt.4(get-window-size):::orange
+
+%% idj(jermbox)
+    idj.1(jermbox/init-jermbox):::green
+    idj.2(jermbox/shutdown-jermbox):::green
+    idj.3(jermbox/readkey):::green
 
 id1(main)
     id1.1(init):::violet
-        %% idt.1(enable-raw-mode)
+        %% idj.1(init-jermbox)
         id1.1.1(reset-editor-state):::violet
             %% idt.4(get-window-size):::violet
         id1.1.2(editor-open):::violet
@@ -89,20 +94,20 @@ id1(main)
         id1.3.2(editor-handletyping):::indigo
     
     id1.4(exit):::blue
+        %% idj.2(shutdown-jermbox)
         %% idt.3(disable-raw-mode)
         
 %% Connections
-%% idt.4 & idt.1 & idt.2 & idt.3 --> idt
 id1 --> id1.1 & id1.2 & id1.3 & id1.4
-    id1.1 --> idt.1 & id1.1.1 & id1.1.2
+    id1.1 --> idj.1 & id1.1.1 & id1.1.2
         id1.1.1 --> idt.4
     subgraph while
         id1.2 --> id1.2.1 & id1.2.2 & id1.2.3 & id1.2.4
             id1.2.3 --> id1.2.3.1 & id1.2.3.2 & id1.2.3.3 & id1.2.3.4 & id1.2.3.5 & id1.2.3.6 & id1.2.3.7 & id1.2.3.8 & id1.2.3.9 & id1.2.3.10 & id1.2.3.11 & id1.2.3.12
-        id1.3 --> idt.2 & id1.3.1 & id1.3.2
+        id1.3 --> idj.3 & id1.3.1 & id1.3.2
             id1.3.1 --> id1.3.1.1 & id1.3.1.2 & id1.3.1.3 & id1.3.1.4 & id1.3.1.5 & id1.3.1.6 & id1.3.1.7 & id1.3.1.8 & id1.3.1.9 & id1.3.1.10 & id1.3.1.11 & id1.3.1.12 & id1.3.1.13 & id1.3.1.14 & id1.3.1.15 & id1.3.1.16 & id1.3.1.17 & id1.3.1.18 & id1.3.1.19 & id1.3.1.20 & id1.3.1.21 
                 id1.3.1.1 --> id1.3.1.1.1 & id1.3.1.1.2 & id1.3.1.1.3 & id1.3.1.1.4 & id1.3.1.1.5 & id1.3.1.1.6 & id1.3.1.1.7 & id1.3.1.1.8 & id1.3.1.1.9 & id1.3.1.1.10 & id1.3.1.1.11 & id1.3.1.1.12 & id1.3.1.1.13 & id1.3.1.1.14 & id1.3.1.1.15
     end
-    id1.4 --> idt.3
+    id1.4 --> idj.2
 
 ```
