@@ -177,7 +177,7 @@
         left (case dir :left true :right false)
         [f df] (if left [string/reverse -] [identity +])
         mf (if left wrap-to-end-of-prev-line wrap-to-start-of-next-line)
-        line (f (get-in editor-state [:erows (abs-y)]))
+        line (f (get-in editor-state [:erows (abs-y)] ""))
         x (if left (- (max-x (abs-y)) (abs-x)) (abs-x))
         s (string/slice line x)
         ls (safe-len (take-while |(index-of $ (string/bytes delims)) (string/bytes s)))
@@ -332,17 +332,19 @@
     (array/concat dup (drop (safe-len priority) secondary))))
 
 (defn add-welcome-message [rows]
-  (def messages @[(string "Joule editor -- version " version)
-                  ""
-                  "Ctrl + q                 quit"
-                  "Ctrl + l                 load"
-                  "Ctrl + s                 save"
-                  "Ctrl + a              save as"
-                  "Ctrl + f               search"
-                  "Ctrl + g       go (to line #)"
-                  "Ctrl + c                 copy"
-                  "Ctrl + p                paste"
-                  "Ctrl + n       toggle numbers"])
+  (def messages @[(string "Joule editor -- version " version)])
+  (def add-messages @[""
+                      "Ctrl + q                 quit"
+                      "Ctrl + l                 load"
+                      "Ctrl + s                 save"
+                      "Ctrl + a              save as"
+                      "Ctrl + f               search"
+                      "Ctrl + g       go (to line #)"
+                      "Ctrl + c                 copy"
+                      "Ctrl + p                paste"
+                      "Ctrl + n       toggle numbers"])
+  (if (>= (editor-state :screenrows) (+ 2 (length messages) (length add-messages)))
+    (array/concat messages add-messages))
   (if (deep= @[] (flatten (editor-state :erows)))
     (let [r (editor-state :screenrows)
           c (editor-state :screencols)
@@ -365,7 +367,7 @@
              (string/slice $ 0 cols) $) rows)))
 
 (defn render-tabs [rows]
-  (let [tabsize (get-in editor-state [:userconfig :tabsize])
+  (let [tabsize (get-in editor-state [:userconfig :tabsize] "")
         spaces (string/repeat " " tabsize)]
     (map |(string/replace-all "\t" spaces $) rows)))
 
@@ -408,7 +410,7 @@
   rows)
 
 (defn apply-margin [rows]
-  (let [numtype (get-in editor-state [:userconfig :numtype])]
+  (let [numtype (get-in editor-state [:userconfig :numtype] "")]
     (case numtype
       :on (add-line-numbers rows)
       :relative (add-relative-numbers rows)
@@ -485,7 +487,7 @@
 (varfn clear-selection [])
 
 (defn clip-copy-single [kind y from-x to-x]
-  (let [line (string/slice (get-in editor-state [:erows y]) from-x to-x)]
+  (let [line (string/slice (get-in editor-state [:erows y] "") from-x to-x)]
     (edup :clipboard |(array/push $ line))
     (when (= kind :cut)
       (update-erow y | (string/cut $ from-x (dec to-x)))
@@ -543,8 +545,8 @@
        (not (empty? (editor-state :select-to)))))
 
 (varfn clear-selection []
-  (edset :select-from {}
-         :select-to {}))
+  (edset :select-from @{}
+         :select-to @{}))
 
 (defn grow-selection [dir]
   (let [start-x (abs-x)
@@ -641,7 +643,7 @@
   (edup :dirty inc))
 
 (defn backspace-back-to-prev-line []
-  (let [current-line (get-in editor-state [:erows (abs-y)])
+  (let [current-line (get-in editor-state [:erows (abs-y)] "")
         leaving-y (abs-y)]
     (move-cursor :up)
     (move-cursor :end) 
@@ -652,7 +654,7 @@
 
 (defn delete-next-line-up []
   (unless (= (abs-y) (safe-len (editor-state :erows)))
-    (let [next-line (get-in editor-state [:erows (inc (abs-y))])]
+    (let [next-line (get-in editor-state [:erows (inc (abs-y))] "")]
       (update-erow (abs-y) |(string $ next-line))
       (edup :erows |(array/remove $ (inc (abs-y)))))))
 
@@ -700,8 +702,8 @@
           :ctrl-w (close-file :close)
           :ctrl-f (find-in-text-modal)
           :ctrl-g (jump-to-modal)
-          :ctrl-z (break) # TODO: Undo in normal typing
-          :ctrl-y (break) # TODO: Redo in normal typing
+          # :ctrl-z (break) # TODO: Undo in normal typing
+          # :ctrl-y (break) # TODO: Redo in normal typing
           
           :ctrl-c (copy-to-clipboard :copy)
           :ctrl-x (copy-to-clipboard :cut)
@@ -715,8 +717,10 @@
                     (move-viewport :pageup))
           :pagedown (move-viewport :pagedown)
     
-          :home (do (edset :rememberx 0) (move-cursor :home))
-          :end (do (edset :rememberx 0) (move-cursor :end))
+          :home (do (edset :rememberx 0)
+                    (move-cursor :home))
+          :end (do (edset :rememberx 0) 
+                   (move-cursor :end))
     
           # TODO: Implement smarter tab stops
           :tab (repeat 4 (editor-handle-typing 32))
@@ -746,29 +750,33 @@
                          (move-cursor-with-mem :down)
                          (update-x-memory cx))
           
-          :ctrlleftarrow (move-cursor :word-left)
-          :ctrlrightarrow (move-cursor :word-right)
+          :ctrlleftarrow (do (edset :rememberx 0) 
+                             (move-cursor :word-left))
+          :ctrlrightarrow (do (edset :rememberx 0) 
+                              (move-cursor :word-right))
           
           # TODO: Multiple cursors?
-          :ctrluparrow (break)
-          :ctrldownarrow (break)
+          # :ctrluparrow (break)
+          # :ctrldownarrow (break)
           
-          :shiftleftarrow (if (= (abs-x) 0)
-                            (break)
-                            (handle-selection :left))
-          :shiftrightarrow (if (= (abs-x) (rowlen (abs-y)))
-                            (break)
-                            (handle-selection :right))
+          :shiftleftarrow (do (edset :rememberx 0)
+                              (if (= (abs-x) 0)
+                                (break)
+                                (handle-selection :left)))
+          :shiftrightarrow (do (edset :rememberx 0)
+                               (if (= (abs-x) (rowlen (abs-y)))
+                                 (break)
+                                 (handle-selection :right)))
           
           # TODO: Shift + Ctrl + Arrows
-          :ctrlshiftuparrow (break)
-          :ctrlshiftdownarrow (break)
-          :ctrlshiftrightarrow (break)
-          :ctrlshiftleftarrow (break)
+          # :ctrlshiftuparrow (break)
+          # :ctrlshiftdownarrow (break)
+          # :ctrlshiftrightarrow (break)
+          # :ctrlshiftleftarrow (break)
     
           # TODO: Handling selection up and down
-          :shiftuparrow (break)
-          :shiftdownarrow (break)
+          # :shiftuparrow (break)
+          # :shiftdownarrow (break)
     
           :shiftdel (delete-row)
           
@@ -784,25 +792,26 @@
                            (> (abs-y) (dec (safe-len (editor-state :erows)))) (move-cursor :up)
                            #Cursor at margin and viewport far left
                            (= (abs-x) 0) (backspace-back-to-prev-line)
-                           #Otherwise
-                            (delete-char :backspace)))
+                           #Otherwise 
+                           (delete-char :backspace)))
     
-          :delete (cond 
-                   # On last line and end of row of file; do nothing
-                   (and (= (abs-x) (rowlen (abs-y)))
-                        (= (abs-y) (dec (safe-len (editor-state :erows))))) (break)
-                   # Cursor at end of current line
-                   (= cx (- (rowlen cy) h-offset)) (delete-next-line-up) 
-                   # Cursor below last file line; cursor up
-                   (> (abs-y) (safe-len (editor-state :erows))) (break)
-                   # Otherwise
-                   (delete-char :delete))
+          :delete (do (edset :rememberx 0)
+                      (cond
+                        #On last line and end of row of file; do nothing
+                        (and (= (abs-x) (rowlen (abs-y)))
+                             (= (abs-y) (dec (safe-len (editor-state :erows))))) (break)
+                        #Cursor at end of current line
+                        (= cx (- (rowlen cy) h-offset)) (delete-next-line-up)
+                        #Cursor below last file line; cursor up
+                        (> (abs-y) (safe-len (editor-state :erows))) (break)
+                        #Otherwise
+                         (delete-char :delete)))
     
           # TODO: Process mouse clicks 
-          :mouseleft (break)
-          :mouseright (break)
-          :mousemiddle (break)
-          :mouserelease (break)
+          # :mouseleft (break)
+          # :mouseright (break)
+          # :mousemiddle (break)
+          # :mouserelease (break)
 
           :mousewheelup (unless (= 0 (editor-state :rowoffset)) 
                                 (edup :rowoffset dec) 
@@ -811,7 +820,9 @@
           :mousewheeldown (do (edup :rowoffset inc)
                               (move-cursor-with-mem :in-place)
                               (update-x-memory cx))
-    
+          
+          # :windowresize (break)
+
           # TODO: Function row
     
           # Default 
