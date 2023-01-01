@@ -32,3 +32,16 @@
             (joule/editor-process-keypress key))
       (ignore-screen-size)
       (expect joule/editor-state {:cx 3 :cy 4 :modalinput "" :coloffset 0 :statusmsg "" :modalmsg "" :statusmsgtime 0 :rowoffset 0 :filename "" :select-from {} :filetype "" :linenumbers true :rememberx 0 :leftmargin 3 :dirty 138 :clipboard ["Hello, there"] :erows ["the quick brown fox jumps over the lazy dog" "THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG" "1234567890 !@#$%^&*() `~|\\?/.>,<'\";:[{}]" "b" "123"] :select-to {} :userconfig {:indentwith :spaces :numtype :on :tabsize 2 :scrollpadding 5}}))
+
+(test editor-search-while-finding-next
+      (joule/reset-editor-state)
+      (each key [;(string/bytes "the quick brown fox jumps over the lazy dog") :enter
+                 ;(string/bytes "THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG") :enter
+                 ;(string/bytes "1234567890 !@#$%^&*() `~|\\?/.>,<'\";:[{}]") :enter]
+            (joule/editor-process-keypress key))
+      (joule/edset :search-active true)
+      (joule/find-all "quick")
+      (move-to-match) 
+      (find-next)
+      (ignore-screen-size)
+      (expect joule/editor-state 0))
