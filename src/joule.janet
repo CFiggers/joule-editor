@@ -894,7 +894,7 @@
         # BUG: This is broken when backspacing at end of current line
         :backspace (cond at-home (break)
                          (delete-char-modal :backspace))
-        :del (cond at-end (break)
+        :delete (cond at-end (break)
                    (delete-char-modal :delete))
 
         :pageup (move-cursor-modal :home)
