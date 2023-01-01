@@ -530,8 +530,8 @@
        (not (empty? (editor-state :select-to)))))
 
 (varfn clear-selection []
-  (edset :select-from {}
-         :select-to {}))
+  (edset :select-from @{}
+         :select-to @{}))
 
 (defn grow-selection [dir]
   (let [start-x (abs-x)
