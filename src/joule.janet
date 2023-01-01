@@ -11,7 +11,7 @@
 
 ### Data ###
 
-(var j-quit false)
+(var joule-quit false)
 
 # TODO: Implement multiple "tabs"/buffers open simultaneously
 
@@ -118,11 +118,23 @@
 
 # TODO: Implement jump to start/end of file
 
+(defn clamp-row []
+  (edset :cx (min (editor-state :cx)
+                  (max-x (abs-y)))))
+
+(defn clamp-viewport []
+  (let [overhang (- (+ (editor-state :rowoffset) (editor-state :cy))
+                    (dec (length (editor-state :erows))))]
+    (when (pos? overhang)
+      (edup :rowoffset | (- $ overhang))
+      (clamp-row))))
+
 (defn jump-to [y x]
   (edset :rowoffset (max 0 (- y (math/trunc (/ (editor-state :screenrows) 2))))
          :coloffset (max 0 (+ 10 (- x (editor-state :screencols)))))
   (edset :cy (- y (editor-state :rowoffset))
-         :cx (- x (editor-state :coloffset))))
+         :cx (- x (editor-state :coloffset)))
+  (clamp-viewport))
 
 (defn move-viewport [direction]
   (case direction
@@ -130,18 +142,19 @@
     :down (edup :rowoffset inc)
     :left (edup :coloffset dec)
     :right (edup :coloffset inc)
-    
+
     :home (edset :coloffset 0)
     :end (edset :coloffset
                 (+ 10 (- (rowlen (abs-y))
                          (editor-state :screencols))))
-    
+
     :pageup (edset :rowoffset
                    (max 0 (- (editor-state :rowoffset)
                              (dec (editor-state :screenrows)))))
-    :pagedown (edset :rowoffset
-                     (+ (editor-state :rowoffset)
-                        (dec (editor-state :screenrows))))))
+    :pagedown (do (edset :rowoffset
+                         (+ (editor-state :rowoffset)
+                            (dec (editor-state :screenrows))))
+                  (clamp-viewport))))
 
 (defn move-cursor-home []
   (move-viewport :home)
@@ -665,6 +678,7 @@
         cy (editor-state :cy)
         v-offset (editor-state :rowoffset)
         h-offset (editor-state :coloffset)]
+    (log (string key))
     (cond 
       (int? key) (editor-handle-typing key)
       (tuple? key) (case (first key)
@@ -701,8 +715,8 @@
                     (move-viewport :pageup))
           :pagedown (move-viewport :pagedown)
     
-          :home (move-cursor :home)
-          :end (move-cursor :end)
+          :home (do (edset :rememberx 0) (move-cursor :home))
+          :end (do (edset :rememberx 0) (move-cursor :end))
     
           # TODO: Implement smarter tab stops
           :tab (repeat 4 (editor-handle-typing 32))
@@ -762,26 +776,27 @@
     
           :esc (when (selection-active?) (clear-selection))
     
-          :backspace (cond
-                       #On top line and home row of file; do nothing
-                       (and (= (abs-x) 0) (= (abs-y) 0)) (break)
-                       #Cursor below last file line; cursor up
-                       (> (abs-y) (dec (safe-len (editor-state :erows)))) (move-cursor :up)
-                       #Cursor at margin and viewport far left
-                       (= (abs-x) 0) (backspace-back-to-prev-line)
-                       #Otherwise
-                       (delete-char :backspace))
+          :backspace (do (edset :rememberx 0)
+                         (cond
+                           #On top line and home row of file; do nothing
+                           (and (= (abs-x) 0) (= (abs-y) 0)) (break)
+                           #Cursor below last file line; cursor up
+                           (> (abs-y) (dec (safe-len (editor-state :erows)))) (move-cursor :up)
+                           #Cursor at margin and viewport far left
+                           (= (abs-x) 0) (backspace-back-to-prev-line)
+                           #Otherwise
+                            (delete-char :backspace)))
     
-          :del (cond 
-                 # On last line and end of row of file; do nothing
-                 (and (= (abs-x) (rowlen (abs-y)))
-                      (= (abs-y) (dec (safe-len (editor-state :erows))))) (break)
-                 # Cursor at end of current line
-                 (= cx (- (rowlen cy) h-offset)) (delete-next-line-up) 
-                 # Cursor below last file line; cursor up
-                 (> (abs-y) (safe-len (editor-state :erows))) (break)
-                 # Otherwise
-                 (delete-char :delete))
+          :delete (cond 
+                   # On last line and end of row of file; do nothing
+                   (and (= (abs-x) (rowlen (abs-y)))
+                        (= (abs-y) (dec (safe-len (editor-state :erows))))) (break)
+                   # Cursor at end of current line
+                   (= cx (- (rowlen cy) h-offset)) (delete-next-line-up) 
+                   # Cursor below last file line; cursor up
+                   (> (abs-y) (safe-len (editor-state :erows))) (break)
+                   # Otherwise
+                   (delete-char :delete))
     
           # TODO: Process mouse clicks 
           :mouseleft (break)
@@ -1106,7 +1121,7 @@
 
 (varfn close-file [kind]
   (let [callback (case kind 
-                   :quit |(set j-quit true)
+                   :quit |(set joule-quit true)
                    :close |(do (reset-editor-state)
                                (send-status-msg "File closed.")))]
     (set modal-rethome false)
@@ -1132,7 +1147,7 @@
 (defn main [& args]
   (defer (exit)
          (init args)
-         (try (while (not j-quit)
+         (try (while (not joule-quit)
                 (editor-refresh-screen)
                 (editor-process-keypress))
               ([err fib]
