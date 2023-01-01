@@ -319,17 +319,19 @@
     (array/concat dup (drop (safe-len priority) secondary))))
 
 (defn add-welcome-message [rows]
-  (def messages @[(string "Joule editor -- version " version)
-                  ""
-                  "Ctrl + q                 quit"
-                  "Ctrl + l                 load"
-                  "Ctrl + s                 save"
-                  "Ctrl + a              save as"
-                  "Ctrl + f               search"
-                  "Ctrl + g       go (to line #)"
-                  "Ctrl + c                 copy"
-                  "Ctrl + p                paste"
-                  "Ctrl + n       toggle numbers"])
+  (def messages @[(string "Joule editor -- version " version)])
+  (def add-messages @[""
+                      "Ctrl + q                 quit"
+                      "Ctrl + l                 load"
+                      "Ctrl + s                 save"
+                      "Ctrl + a              save as"
+                      "Ctrl + f               search"
+                      "Ctrl + g       go (to line #)"
+                      "Ctrl + c                 copy"
+                      "Ctrl + p                paste"
+                      "Ctrl + n       toggle numbers"])
+  (if (>= (editor-state :screenrows) (+ (length messages) (length add-messages)))
+    (array/concat messages add-messages))
   (if (deep= @[] (flatten (editor-state :erows)))
     (let [r (editor-state :screenrows)
           c (editor-state :screencols)
