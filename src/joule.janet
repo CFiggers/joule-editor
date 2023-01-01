@@ -691,7 +691,7 @@
                                   (edset :cx click-x)
                                   (edset :cy click-y))
                      
-                     (break))  
+                     (break))
       (case key 
           :ctrl-q (close-file :quit)
           :ctrl-n (toggle-line-numbers)
@@ -702,8 +702,8 @@
           :ctrl-w (close-file :close)
           :ctrl-f (find-in-text-modal)
           :ctrl-g (jump-to-modal)
-          # :ctrl-z (break) # TODO: Undo in normal typing
-          # :ctrl-y (break) # TODO: Redo in normal typing
+          :ctrl-z (send-status-msg "Apologies! Undo and redo are not implemented yet.") # TODO: Undo in normal typing
+          :ctrl-y (send-status-msg "Apologies! Undo and redo are not implemented yet.") # TODO: Redo in normal typing
           
           :ctrl-c (copy-to-clipboard :copy)
           :ctrl-x (copy-to-clipboard :cut)
@@ -780,8 +780,8 @@
           # :ctrlshiftleftarrow (break)
     
           # TODO: Handling selection up and down
-          # :shiftuparrow (break)
-          # :shiftdownarrow (break)
+          :shiftuparrow (send-status-msg "Apologies! Selection of multiple lines is not implemented yet.")
+          :shiftdownarrow (send-status-msg "Apologies! Selection of multiple lines is not implemented yet.")
     
           :shiftdel (delete-row)
           
@@ -1068,6 +1068,7 @@
     (case key
       :ctrl-q (cancel-search)
       :ctrl-d (enter-debugger)
+      # :ctrl-f (break)
 
       :tab (do (move-to-match)
                  (find-next))
