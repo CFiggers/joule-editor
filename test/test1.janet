@@ -25,7 +25,9 @@
       (each key [;(string/bytes "the quick brown fox jumps over the lazy dog") :enter
                  ;(string/bytes "THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG") :enter
                  ;(string/bytes "1234567890 !@#$%^&*() `~|\\?/.>,<'\";:[{}]") :enter
-                 97 98 99 :enter 49 50 51 :uparrow :backspace :home :end :home :delete :downarrow :rightarrow :rightarrow :leftarrow
+                 97 98 99 :enter 49 50 51 
+                 :uparrow :backspace :home :end :home :delete 
+                 :downarrow :rightarrow :rightarrow :leftarrow
                  :pageup :pagedown]
             (joule/editor-process-keypress key))
       (ignore-screen-size)
