@@ -43,4 +43,4 @@
   (jdn/decode (slurp where)))
 
 (defn log [content]
-  (spit "log.txt" (string content "\n") :a))
+  (spit "log.txt" (string (string/format "%q" content) "\n") :a))
