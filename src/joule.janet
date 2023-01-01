@@ -703,8 +703,10 @@
                     (move-viewport :pageup))
           :pagedown (move-viewport :pagedown)
     
-          :home (move-cursor :home)
-          :end (move-cursor :end)
+          :home (do (edset :rememberx 0)
+                    (move-cursor :home))
+          :end (do (edset :rememberx 0) 
+                   (move-cursor :end))
     
           # TODO: Implement smarter tab stops
           :tab (repeat 4 (editor-handle-typing 32))
@@ -734,19 +736,23 @@
                          (move-cursor-with-mem :down)
                          (update-x-memory cx))
           
-          :ctrlleftarrow (move-cursor :word-left)
-          :ctrlrightarrow (move-cursor :word-right)
+          :ctrlleftarrow (do (edset :rememberx 0) 
+                             (move-cursor :word-left))
+          :ctrlrightarrow (do (edset :rememberx 0) 
+                              (move-cursor :word-right))
           
           # TODO: Multiple cursors?
           # :ctrluparrow (break)
           # :ctrldownarrow (break)
           
-          :shiftleftarrow (if (= (abs-x) 0)
-                            (break)
-                            (handle-selection :left))
-          :shiftrightarrow (if (= (abs-x) (rowlen (abs-y)))
-                            (break)
-                            (handle-selection :right))
+          :shiftleftarrow (do (edset :rememberx 0)
+                              (if (= (abs-x) 0)
+                                (break)
+                                (handle-selection :left)))
+          :shiftrightarrow (do (edset :rememberx 0)
+                               (if (= (abs-x) (rowlen (abs-y)))
+                                 (break)
+                                 (handle-selection :right)))
           
           # TODO: Shift + Ctrl + Arrows
           # :ctrlshiftuparrow (break)
@@ -764,26 +770,28 @@
     
           :esc (when (selection-active?) (clear-selection))
     
-          :backspace (cond
-                       #On top line and home row of file; do nothing
-                       (and (= (abs-x) 0) (= (abs-y) 0)) (break)
-                       #Cursor below last file line; cursor up
-                       (> (abs-y) (dec (safe-len (editor-state :erows)))) (move-cursor :up)
-                       #Cursor at margin and viewport far left
-                       (= (abs-x) 0) (backspace-back-to-prev-line)
-                       #Otherwise
-                       (delete-char :backspace))
+          :backspace (do (edset :rememberx 0)
+                         (cond
+                           #On top line and home row of file; do nothing
+                           (and (= (abs-x) 0) (= (abs-y) 0)) (break)
+                           #Cursor below last file line; cursor up
+                           (> (abs-y) (dec (safe-len (editor-state :erows)))) (move-cursor :up)
+                           #Cursor at margin and viewport far left
+                           (= (abs-x) 0) (backspace-back-to-prev-line)
+                           #Otherwise 
+                           (delete-char :backspace)))
     
-          :delete (cond 
-                 # On last line and end of row of file; do nothing
-                 (and (= (abs-x) (rowlen (abs-y)))
-                      (= (abs-y) (dec (safe-len (editor-state :erows))))) (break)
-                 # Cursor at end of current line
-                 (= cx (- (rowlen cy) h-offset)) (delete-next-line-up) 
-                 # Cursor below last file line; cursor up
-                 (> (abs-y) (safe-len (editor-state :erows))) (break)
-                 # Otherwise
-                 (delete-char :delete))
+          :delete (do (edset :rememberx 0)
+                      (cond
+                        #On last line and end of row of file; do nothing
+                        (and (= (abs-x) (rowlen (abs-y)))
+                             (= (abs-y) (dec (safe-len (editor-state :erows))))) (break)
+                        #Cursor at end of current line
+                        (= cx (- (rowlen cy) h-offset)) (delete-next-line-up)
+                        #Cursor below last file line; cursor up
+                        (> (abs-y) (safe-len (editor-state :erows))) (break)
+                        #Otherwise
+                         (delete-char :delete)))
     
           # TODO: Process mouse clicks 
           # :mouseleft (break)
