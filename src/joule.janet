@@ -715,7 +715,12 @@
                     (do (move-cursor :home)
                         (edset :cy 0))
                     (move-viewport :pageup))
-          :pagedown (move-viewport :pagedown)
+          
+          # If bottom line of file on current screen
+          :pagedown (if (< (+ (abs-y) (- (editor-state :screenrows) 2)) (safe-len (editor-state :erows)))
+                      (move-viewport :pagedown)
+                      (do (edset :cy (- (safe-len (editor-state :erows)) (editor-state :rowoffset) 1))
+                          (edset :cx (max-x (abs-y)))))
     
           :home (do (edset :rememberx 0)
                     (move-cursor :home))
