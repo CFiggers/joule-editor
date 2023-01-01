@@ -164,7 +164,7 @@
         left (case dir :left true :right false)
         [f df] (if left [string/reverse -] [identity +])
         mf (if left wrap-to-end-of-prev-line wrap-to-start-of-next-line)
-        line (f (get-in editor-state [:erows (abs-y)]))
+        line (f (get-in editor-state [:erows (abs-y)] ""))
         x (if left (- (max-x (abs-y)) (abs-x)) (abs-x))
         s (string/slice line x)
         ls (safe-len (take-while |(index-of $ (string/bytes delims)) (string/bytes s)))
@@ -352,7 +352,7 @@
              (string/slice $ 0 cols) $) rows)))
 
 (defn render-tabs [rows]
-  (let [tabsize (get-in editor-state [:userconfig :tabsize])
+  (let [tabsize (get-in editor-state [:userconfig :tabsize] "")
         spaces (string/repeat " " tabsize)]
     (map |(string/replace-all "\t" spaces $) rows)))
 
@@ -395,7 +395,7 @@
   rows)
 
 (defn apply-margin [rows]
-  (let [numtype (get-in editor-state [:userconfig :numtype])]
+  (let [numtype (get-in editor-state [:userconfig :numtype] "")]
     (case numtype
       :on (add-line-numbers rows)
       :relative (add-relative-numbers rows)
@@ -472,7 +472,7 @@
 (varfn clear-selection [])
 
 (defn clip-copy-single [kind y from-x to-x]
-  (let [line (string/slice (get-in editor-state [:erows y]) from-x to-x)]
+  (let [line (string/slice (get-in editor-state [:erows y] "") from-x to-x)]
     (edup :clipboard |(array/push $ line))
     (when (= kind :cut)
       (update-erow y | (string/cut $ from-x (dec to-x)))
@@ -530,8 +530,8 @@
        (not (empty? (editor-state :select-to)))))
 
 (varfn clear-selection []
-  (edset :select-from {}
-         :select-to {}))
+  (edset :select-from @{}
+         :select-to @{}))
 
 (defn grow-selection [dir]
   (let [start-x (abs-x)
@@ -628,7 +628,7 @@
   (edup :dirty inc))
 
 (defn backspace-back-to-prev-line []
-  (let [current-line (get-in editor-state [:erows (abs-y)])
+  (let [current-line (get-in editor-state [:erows (abs-y)] "")
         leaving-y (abs-y)]
     (move-cursor :up)
     (move-cursor :end) 
@@ -639,7 +639,7 @@
 
 (defn delete-next-line-up []
   (unless (= (abs-y) (safe-len (editor-state :erows)))
-    (let [next-line (get-in editor-state [:erows (inc (abs-y))])]
+    (let [next-line (get-in editor-state [:erows (inc (abs-y))] "")]
       (update-erow (abs-y) |(string $ next-line))
       (edup :erows |(array/remove $ (inc (abs-y)))))))
 
