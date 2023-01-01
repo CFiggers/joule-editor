@@ -1,4 +1,5 @@
 (import jermbox)
+(use /src/utilities)
 
 (defn init-jermbox []
   (setdyn :ev (jermbox/init-event))
@@ -55,13 +56,15 @@
    :modifier (jermbox/event-modifier event)
    :character (jermbox/event-character event)
    :x (jermbox/event-x event)
-   :y (jermbox/event-y event)})
+   :y (jermbox/event-y event)
+   :width (jermbox/event-width event)
+   :height (jermbox/event-height event)})
 
 (defn main-loop [event]
   (var keystrokes @[]) 
   (jermbox/poll-event event)
   (array/push keystrokes (get-key-struct event))
-  (when (deep= keystrokes @[{:character 0 :key 27 :modifier 0 :x 0 :y 0}])
+  (when (deep= keystrokes @[{:character 0 :key 27 :modifier 0 :x 0 :y 0 :width 0 :height 0}])
     (while (jermbox/peek-event event 10)
       (array/push keystrokes (get-key-struct event))))
   keystrokes)
@@ -70,9 +73,12 @@
   (let [{:key key
          :character char
          :x x
-         :y y} ar]
-    (if (= key 65513)
-      [:mouseleft x y]
+         :y y
+         :width width
+         :height height} ar]
+    (cond 
+      (= key 65513) [:mouseleft x y]
+      (or (not= 0 width) (not= 0 height)) :windowresize
       (let [value (if (= 0 key) char key)] 
         (get keymap value value)))))
 
@@ -97,6 +103,7 @@
 
 (defn read-key [event]
   (let [jermbox-array (main-loop event)] 
+    (log jermbox-array)
     (if (= 1 (length jermbox-array))
       (convert-single (first jermbox-array))
       (convert-multiple jermbox-array))))

@@ -688,8 +688,8 @@
           :ctrl-w (close-file :close)
           :ctrl-f (find-in-text-modal)
           :ctrl-g (jump-to-modal)
-          :ctrl-z (break) # TODO: Undo in normal typing
-          :ctrl-y (break) # TODO: Redo in normal typing
+          # :ctrl-z (break) # TODO: Undo in normal typing
+          # :ctrl-y (break) # TODO: Redo in normal typing
           
           :ctrl-c (copy-to-clipboard :copy)
           :ctrl-x (copy-to-clipboard :cut)
@@ -738,8 +738,8 @@
           :ctrlrightarrow (move-cursor :word-right)
           
           # TODO: Multiple cursors?
-          :ctrluparrow (break)
-          :ctrldownarrow (break)
+          # :ctrluparrow (break)
+          # :ctrldownarrow (break)
           
           :shiftleftarrow (if (= (abs-x) 0)
                             (break)
@@ -749,14 +749,14 @@
                             (handle-selection :right))
           
           # TODO: Shift + Ctrl + Arrows
-          :ctrlshiftuparrow (break)
-          :ctrlshiftdownarrow (break)
-          :ctrlshiftrightarrow (break)
-          :ctrlshiftleftarrow (break)
+          # :ctrlshiftuparrow (break)
+          # :ctrlshiftdownarrow (break)
+          # :ctrlshiftrightarrow (break)
+          # :ctrlshiftleftarrow (break)
     
           # TODO: Handling selection up and down
-          :shiftuparrow (break)
-          :shiftdownarrow (break)
+          # :shiftuparrow (break)
+          # :shiftdownarrow (break)
     
           :shiftdel (delete-row)
           
@@ -786,10 +786,10 @@
                  (delete-char :delete))
     
           # TODO: Process mouse clicks 
-          :mouseleft (break)
-          :mouseright (break)
-          :mousemiddle (break)
-          :mouserelease (break)
+          # :mouseleft (break)
+          # :mouseright (break)
+          # :mousemiddle (break)
+          # :mouserelease (break)
 
           :mousewheelup (unless (= 0 (editor-state :rowoffset)) 
                                 (edup :rowoffset dec) 
@@ -798,7 +798,9 @@
           :mousewheeldown (do (edup :rowoffset inc)
                               (move-cursor-with-mem :in-place)
                               (update-x-memory cx))
-    
+          
+          # :windowresize (break)
+
           # TODO: Function row
     
           # Default 
