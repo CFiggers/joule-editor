@@ -330,7 +330,7 @@
                       "Ctrl + c                 copy"
                       "Ctrl + p                paste"
                       "Ctrl + n       toggle numbers"])
-  (if (>= (editor-state :screenrows) (+ (length messages) (length add-messages)))
+  (if (>= (editor-state :screenrows) (+ 2 (length messages) (length add-messages)))
     (array/concat messages add-messages))
   (if (deep= @[] (flatten (editor-state :erows)))
     (let [r (editor-state :screenrows)
