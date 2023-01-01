@@ -103,7 +103,7 @@
 
 (defn read-key [event]
   (let [jermbox-array (main-loop event)] 
-    (log jermbox-array)
+    # (log jermbox-array)
     (if (= 1 (length jermbox-array))
       (convert-single (first jermbox-array))
       (convert-multiple jermbox-array))))
