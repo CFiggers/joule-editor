@@ -774,7 +774,7 @@
                        #Otherwise
                        (delete-char :backspace))
     
-          :del (cond 
+          :delete (cond 
                  # On last line and end of row of file; do nothing
                  (and (= (abs-x) (rowlen (abs-y)))
                       (= (abs-y) (dec (safe-len (editor-state :erows))))) (break)
@@ -883,7 +883,7 @@
         # BUG: This is broken when backspacing at end of current line
         :backspace (cond at-home (break)
                          (delete-char-modal :backspace))
-        :del (cond at-end (break)
+        :delete (cond at-end (break)
                    (delete-char-modal :delete))
 
         :pageup (move-cursor-modal :home)
