@@ -9,13 +9,15 @@
              :red "0;31"              
              :green "0;32" 
              :yellow "0;33"
-             :blue "38;2;86;156;214" 
+             :blue "0;34"
+             :medium-blue "38;2;86;156;214" 
              :magenta "38;2;197;134;192"
              :cyan "0;36" 
              :white "0;37"
              :brown "38;2;206;145;120"              
              :cream-green "38;2;181;206;168"
              :powder-blue "38;2;156;220;254"
+             :rich-blue "38;2;79;193;255"
              :drab-green "38;2;106;153;85"
              :seafoam-green "38;2;78;201;176"
              :default "0;39")]
@@ -58,7 +60,7 @@
       :delim (+ :ws (set "([{\"`}])"))
       :symchars (+ (range "09" "AZ" "az" "\x80\xFF") (set "!$%&*+-./:<?=>@^_"))
       :numbers (replace (<- (some (+ :d "."))) ,|(color $ :cream-green))
-      :keyword (replace (<- (* ":" (some :symchars))) ,|(color $ :magenta)) 
+      :keyword (replace (<- (* ":" (some :symchars))) ,|(color $ :rich-blue)) 
       :symbol (replace (<- (some (+ :symchars "-"))) ,|(color $ :powder-blue))
       :special (replace (* (<- (+ ,;janet-core-fns ,;janet-special-forms)) :ws) ,|(string (color $0 :magenta) $1))
       :else (<- 1)
@@ -69,9 +71,9 @@
       :block-comment (replace (<- (* "/*" (to "*/") "*/")) ,|(color $ :drab-green))
       :corefn (replace (* (<- (+ ,;c-core-fns)) :ws) ,(fn [cap ws] (string (color cap :white) ws)))
       :type1 (replace (* (<- (+ ,;c-types1)) :ws) ,(fn [cap ws] (string (color cap :seafoam-green) ws)))
-      :type2 (replace (* (<- (+ ,;c-types2)) :ws) ,(fn [cap ws] (string (color cap :blue) ws)))
+      :type2 (replace (* (<- (+ ,;c-types2)) :ws) ,(fn [cap ws] (string (color cap :medium-blue) ws)))
       :ctrl-flow (replace (* (<- (+ ,;c-ctrl-flow)) :ws) ,(fn [cap ws] (string (color cap :magenta) ws)))
-      :enum (replace (* (<- (at-least 3 (+ (range "AZ") "_"))) :ws) ,(fn [cap ws] (string (color cap :blue) ws)))
+      :enum (replace (* (<- (at-least 3 (+ (range "AZ") "_"))) :ws) ,(fn [cap ws] (string (color cap :medium-blue) ws)))
       :string (replace (<- (* "\"" (to "\"") "\"")) ,|(color $ :brown))
       :include (replace (<- (* "<" (to ">") ">")) ,|(color $ :brown))
       :numbers (replace (<- (some (+ :d "."))) ,|(color $ :cream-green))
