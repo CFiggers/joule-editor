@@ -65,7 +65,7 @@
   (jermbox/poll-event event)
   (array/push keystrokes (get-key-struct event))
   (when (deep= keystrokes @[{:character 0 :key 27 :modifier 0 :x 0 :y 0 :width 0 :height 0}])
-    (while (jermbox/peek-event event 10)
+    (while (jermbox/peek-event event 1) # TODO: Make this more efficient by defining number of loops to make based on type
       (array/push keystrokes (get-key-struct event))))
   keystrokes)
 

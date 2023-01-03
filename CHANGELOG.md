@@ -2,10 +2,12 @@
 
 ## 0.0.5
   - New Features
+    - Status message when user triggers unimplemented (but planned) keybindings
     - Syntax highlighting for C source files 
   - Bugfixes
     - 
   - Misc
+    - Added test suite 1
     - Static linking of final executable
 
 ## 0.0.4-b

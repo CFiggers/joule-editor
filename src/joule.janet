@@ -680,7 +680,6 @@
         cy (editor-state :cy)
         v-offset (editor-state :rowoffset)
         h-offset (editor-state :coloffset)]
-    (log (string key))
     (cond 
       (int? key) (editor-handle-typing key)
       (tuple? key) (case (first key)
@@ -854,10 +853,10 @@
          :temp-coloffset (editor-state :coloffset)))
 
 (defn return-to-temp-pos []
-  (edset :cx (editor-state :tempx)
-         :cy (editor-state :tempy)
-         :rowoffset (editor-state :temp-rowoffset)
-         :coloffset (editor-state :temp-coloffset)))
+  (edset :cx (or (editor-state :tempx) 0)
+         :cy (or (editor-state :tempy) 0)
+         :rowoffset (or (editor-state :temp-rowoffset) (editor-state :rowoffset))
+         :coloffset (or (editor-state :temp-coloffset) (editor-state :coloffset))))
 
 (defn clear-temp-pos []
   (edset :tempx nil
@@ -1002,7 +1001,8 @@
   (let [erows (string/split "\n" (try (slurp filename) 
                                       ([e f] (spit filename "")
                                              (slurp filename))))
-        callback |(do (edset :filename filename
+        callback |(do (set modal-rethome false) # TODO: This isn't working because modal is two layers deep, need to find a way to trigger the same thing in the upper layer of the modal
+                      (edset :filename filename
                              :erows erows
                              :filetype (detect-filetype filename)))]
     (confirm-lose-changes callback)))
@@ -1025,10 +1025,11 @@
            (send-status-msg (string "File saved!"))))
 
 (varfn load-file-modal [] 
-  (modal "Load what file?" :input |(load-file (editor-state :modalinput))) 
+  (modal "Load what file?" :input |(do (load-file (editor-state :modalinput)))) 
   (if modal-cancel
     (send-status-msg "Cancelled.")
-    (send-status-msg (string "Loaded file: " (editor-state :filename)))))
+    (do (edset :cx 0 :cy 0 :rowoffset 0 :coloffset 0)
+        (send-status-msg (string "Loaded file: " (editor-state :filename))))))
 
 (defn editor-open [args]
   (when-let [file (first (drop 1 args))]
@@ -1068,18 +1069,19 @@
     (case key
       :ctrl-q (cancel-search)
       :ctrl-d (enter-debugger)
-      # :ctrl-f (break)
+      :ctrl-f (do (exit-search)
+                  (find-in-text-modal))
 
       :tab (do (move-to-match)
-                 (find-next))
+               (find-next))
       :enter (do (move-to-match)
                  (find-next))
       :esc (cancel-search)
-      
-      # Otherwise
-      (do (exit-search)
-          # Process keypress normally
-          (editor-process-keypress key)))))
+
+      #Otherwise
+       (do (exit-search)
+           #Process keypress normally
+           (editor-process-keypress key)))))
 
 (defn find-all [search-str]
   (let [finds (map | (string/find-all search-str $) (editor-state :erows))
@@ -1093,12 +1095,12 @@
       (send-status-msg "No matches found."))))
 
 (varfn find-in-text-modal []
-       (edset :search-active true) 
+       (edset :search-active true)
        (modal "Search: " :input | (do (find-all (editor-state :modalinput))
                                       (if (< 0 (safe-len (editor-state :search-results)))
                                         (find-next true)
                                         (do (return-to-temp-pos)
-                                            (clear-temp-pos) 
+                                            (clear-temp-pos)
                                             (set modal-rethome false)
                                             (edset :search-active nil)
                                             (send-status-msg "No matches found."))))))
@@ -1129,11 +1131,11 @@
                    "save" (if (save-file)
                             (do (edset :dirty 0) (callback))
                             (send-status-msg "Tip: Ctrl + s to Save.")))
-             (send-status-msg "Tip: Ctrl + s to Save."))]
+             (send-status-msg "Tip: Ctrl + s to Save."))] 
     (if (< 0 (editor-state :dirty))
-      (do (modal "Are you sure? Unsaved changes will be lost. (yes/No/save)"
-                 :input 
-                 dispatch))
+      (modal "Are you sure? Unsaved changes will be lost. (yes/No/save)"
+             :input
+             dispatch)
       (callback))))
 
 (varfn close-file [kind]
