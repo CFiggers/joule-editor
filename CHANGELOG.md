@@ -4,6 +4,7 @@
   - New Features
     - Status message when user triggers unimplemented (but planned) keybindings
     - Syntax highlighting for C source files 
+    - Upgraded debugger
   - Bugfixes
     - 
   - Misc

@@ -660,11 +660,27 @@
       (edup :erows |(array/remove $ (inc (abs-y)))))))
 
 (defn enter-debugger []
-  (disable-raw-mode)
+  (jermbox/shutdown-jermbox)
+  
+  (when (= (os/which) :linux)
+    (prin "\e[?1049h"))
   (file/write stdout "\e[H")
   (file/flush stdout)
+  
+  (file/write stdout "Joule Debugger\n\n")
+  (file/flush stdout)
+  (file/write stdout "Current Editor State:\n\n")
+  (file/flush stdout)
+  (file/write stdout (string/format "%q" editor-state))
+  (file/write stdout "\n\n")
+  (file/flush stdout)
+
   (debugger (fiber/current))
-  (enable-raw-mode))
+  
+  (when (= (os/which) :linux)
+    (prin "\e[?1049l"))
+  
+  (jermbox/init-jermbox))
 
 # Declaring out of order to allow type checking to pass
 (varfn save-file [])
