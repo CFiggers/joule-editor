@@ -1,8 +1,8 @@
 (use janet-termios)
 (import spork/path)
-(import "./jermbox")
-(use "./syntax-highlights")
-(use "./utilities")
+(import "/src/jermbox")
+(use "/src/syntax-highlights")
+(use "/src/utilities")
 
 ### Definitions ###
 
@@ -30,31 +30,31 @@
     (load-jdn joulerc-path)))
 
 (defn reset-editor-state []
-     (set editor-state
-          @{:cx 0
-            :cy 0
-            :rememberx 0
-            :rowoffset 0
-            :coloffset 0
-            :erows @[]
-            :dirty 0
-            :linenumbers true
-            :leftmargin 3
-            :filename ""
-            :filetype ""
-            :statusmsg ""
-            :statusmsgtime 0
-            :modalmsg ""
-            :modalinput ""
-            :select-from @{}
-            :select-to @{}
-            :clipboard @["Hello, there"]
-            :screenrows (- ((get-window-size) :rows) 2)
-            :screencols ((get-window-size) :cols)
-            :userconfig @{:scrollpadding 5
-                          :tabsize 2
-                          :indentwith :spaces
-                          :numtype :on}}))
+  (set editor-state
+       @{:cx 0
+         :cy 0
+         :rememberx 0
+         :rowoffset 0
+         :coloffset 0
+         :erows @[]
+         :dirty 0
+         :linenumbers true
+         :leftmargin 3
+         :filename ""
+         :filetype ""
+         :statusmsg ""
+         :statusmsgtime 0
+         :modalmsg ""
+         :modalinput ""
+         :select-from @{}
+         :select-to @{}
+         :clipboard @["Hello, there"]
+         :screenrows (- ((get-window-size) :rows) 2)
+         :screencols ((get-window-size) :cols)
+         :userconfig @{:scrollpadding 5
+                       :tabsize 2
+                       :indentwith :spaces
+                       :numtype :on}}))
 
 ### Editor State Functions ###
 
@@ -73,7 +73,7 @@
 (defn edup [& key-v]
   (assert (= 0 (% (safe-len key-v) 2)))
   (let [key-vs (partition 2 key-v)]
-    (each [key val] key-vs 
+    (each [key val] key-vs
           (update editor-state key val))))
 
 (defn update-erow [row f]
@@ -130,6 +130,7 @@
       (clamp-row))))
 
 (defn jump-to [y x]
+  (log "Ping! jump-to")
   (edset :rowoffset (max 0 (- y (math/trunc (/ (editor-state :screenrows) 2))))
          :coloffset (max 0 (+ 10 (- x (editor-state :screencols)))))
   (edset :cy (- y (editor-state :rowoffset))
@@ -288,12 +289,12 @@
 
 
 (defn hl-x [str x]
-  (let [str-peg (reverse (peg/match esc-code-peg str))] 
+  (let [str-peg (reverse (peg/match esc-code-peg str))]
     (var in-x x)
     (var ret-x 0)
     (while (> in-x 0)
       (var next-peg (array/pop str-peg))
-      (var peg-str (first next-peg)) 
+      (var peg-str (first next-peg))
       (var peg-val (last next-peg))
       (var next-peg-len (length peg-str))
       (if (> in-x peg-val)
@@ -363,7 +364,7 @@
 
 (defn trim-to-width [rows]
   (let [cols (- (editor-state :screencols) 1 (get-margin))]
-    (map |(if (> (safe-len $) cols)
+    (map | (if (> (safe-len $) cols)
              (string/slice $ 0 cols) $) rows)))
 
 (defn render-tabs [rows]
@@ -862,8 +863,7 @@
   (edset :tempx nil
          :tempy nil
          :temp-rowoffset nil
-         :temp-coloffset nil
-         :search-results nil))
+         :temp-coloffset nil))
 
 (defn modal-home []
   (+ (safe-len (editor-state :modalmsg)) 3))
@@ -952,8 +952,10 @@
       
         (break)))))
 
-(defn modal [message kind callback &named modalendput] 
+(defn modal [message kind callback &named keep-input fake-text]
+  (log "Ping! modal" :dump modal-rethome)
   (when modal-rethome
+    (log "modal Saved temp pos")
     (set-temp-pos))
 
   #Init modal-related state
@@ -968,21 +970,29 @@
 
   (set modal-active true)
   (set modal-cancel false)
-  (while (and modal-active (not modal-cancel))
-    (editor-refresh-screen :modal)
-    (modal-process-keypress kind))
+  (if fake-text
+    (do (set modal-active false)
+        (edset :modalinput fake-text))
+    (while (and modal-active (not modal-cancel))
+      (editor-refresh-screen :modal)
+      (modal-process-keypress kind)))
+
+  (log "Mid-modal, before callback: " :dump editor-state)
 
   (unless modal-cancel (callback))
+  (log "Mid-modal, after callback: " :dump editor-state)
 
   #Clean up modal-related state
 
-  (edset :modalmsg ""
-         :modalinput (or modalendput ""))
+  (edset :modalmsg "")
+  (unless keep-input
+          (edset :modalinput ""))
   (when modal-rethome
     (return-to-temp-pos)
     (clear-temp-pos))
   (unless modal-rethome
-          (set modal-rethome true)))
+          (set modal-rethome true))
+  (log "Final state of modal: " :dump editor-state))
 
 ### File I/O ###
 
@@ -998,17 +1008,16 @@
 (varfn confirm-lose-changes [])
 
 (defn load-file [filename]
-  (let [erows (string/split "\n" (try (slurp filename) 
+  (let [erows (string/split "\n" (try (slurp filename)
                                       ([e f] (spit filename "")
                                              (slurp filename))))
-        callback |(do (set modal-rethome false) # TODO: This isn't working because modal is two layers deep, need to find a way to trigger the same thing in the upper layer of the modal
-                      (edset :filename filename
-                             :erows erows
-                             :filetype (detect-filetype filename)))]
+        callback | (edset :filename filename
+                          :erows erows
+                          :filetype (detect-filetype filename))]
     (confirm-lose-changes callback)))
 
-(defn ask-filename-modal []
-  (modal "Filename?" :input |(edset :filename (editor-state :modalinput))))
+(defn ask-filename-modal [&named fake-text]
+  (modal "Filename?" :input |(edset :filename (editor-state :modalinput)) :fake-text fake-text))
 
 (varfn save-file [] 
   (when (= "" (editor-state :filename)) (ask-filename-modal)) 
@@ -1024,8 +1033,8 @@
            (edset :dirty 0)
            (send-status-msg (string "File saved!"))))
 
-(varfn load-file-modal [] 
-  (modal "Load what file?" :input |(do (load-file (editor-state :modalinput)))) 
+(varfn load-file-modal [& fake-text] 
+  (modal "Load what file?" :input |(do (load-file (editor-state :modalinput))) :fake-text fake-text) 
   (if modal-cancel
     (send-status-msg "Cancelled.")
     (do (edset :cx 0 :cy 0 :rowoffset 0 :coloffset 0)
@@ -1039,6 +1048,7 @@
 ### Search ###
 
 (defn move-to-match []
+  (log "Ping! move-to-match")
   (assert (> (safe-len (editor-state :search-results)) 0)) 
   # Search rest of current row
   (let [all-results (editor-state :search-results)
@@ -1055,9 +1065,8 @@
 
 (defn find-next [&opt init]
   # Record current cursor and window position to return later
-  (when init
-    (set modal-rethome false)
-    (return-to-temp-pos)
+  (when init 
+    (set-temp-pos)
     (move-to-match)) 
 
   (let [key (jermbox/read-key (dyn :ev))
@@ -1066,10 +1075,10 @@
         cancel-search |(do (return-to-temp-pos)
                            (exit-search)
                            (editor-refresh-screen))]
-    (case key
+    (case key 
       :ctrl-q (cancel-search)
       :ctrl-d (enter-debugger)
-      :ctrl-f (do (exit-search)
+      :ctrl-f (do (cancel-search)
                   (find-in-text-modal))
 
       :tab (do (move-to-match)
@@ -1085,41 +1094,45 @@
 
 (defn find-all [search-str]
   (let [finds (map | (string/find-all search-str $) (editor-state :erows))
-           i-finds @[]
-           _ (each i finds (array/push i-finds [(index-of i finds) i]))
-           filtered (filter |(not (empty? (last $))) i-finds)
-           distribute (fn [[y arr]] (map |(array y $) arr))
-           final-finds (partition 2 (flatten (map distribute filtered)))]
+        i-finds @[]
+        _ (each i finds (array/push i-finds [(index-of i finds) i]))
+        filtered (filter | (not (empty? (last $))) i-finds)
+        distribute (fn [[y arr]] (map | (array y $) arr))
+        final-finds (partition 2 (flatten (map distribute filtered)))]
     (if final-finds
       (edset :search-results final-finds)
       (send-status-msg "No matches found."))))
 
-(varfn find-in-text-modal []
+(varfn find-in-text-modal [&named fake-text]
+       (log "Ping! find-in-text-modal" :dump editor-state true)
        (edset :search-active true)
-       (modal "Search: " :input | (do (find-all (editor-state :modalinput))
-                                      (if (< 0 (safe-len (editor-state :search-results)))
-                                        (find-next true)
-                                        (do (return-to-temp-pos)
-                                            (clear-temp-pos)
-                                            (set modal-rethome false)
-                                            (edset :search-active nil)
-                                            (send-status-msg "No matches found."))))))
+       (modal "Search: " :input | (find-all (editor-state :modalinput)) 
+              :keep-input false :fake-text fake-text)
+       (if (< 0 (safe-len (editor-state :search-results)))
+         (find-next true)
+         (do (edset :search-active nil)
+             (send-status-msg "No matches found.")))
+       (edset :modalinput ""
+              :search-results nil))
 
 ### Misc Modals ### 
 
-(varfn jump-to-modal [] 
-  (set modal-rethome false)
+(varfn jump-to-modal [&named fake-text] 
   (modal "Go where? (Line #)" :input
-         | (if-let [n (scan-number (editor-state :modalinput))]
-             (jump-to (dec (math/floor n)) 0)
+         (fn [& args]
+           (if-let [n (scan-number (editor-state :modalinput))]
+             (do (jump-to (dec (math/floor n)) 0)
+                 (clear-temp-pos)
+                 (set modal-rethome false))
              (do (return-to-temp-pos)
-                 (send-status-msg "Try again.")))))
+                 (send-status-msg "Try again."))))
+         :fake-text fake-text))
 
 ### Init and main ###
 
 # TODO: Implement user config dotfile
 
-(varfn confirm-lose-changes [callback]
+(varfn confirm-lose-changes [callback &named fake-text]
   (let [dispatch 
         |(do (case (string/ascii-lower (editor-state :modalinput))
                    "yes" (do (edset :dirty 0) (callback))
@@ -1135,7 +1148,8 @@
     (if (< 0 (editor-state :dirty))
       (modal "Are you sure? Unsaved changes will be lost. (yes/No/save)"
              :input
-             dispatch)
+             dispatch
+             :fake-text fake-text)
       (callback))))
 
 (varfn close-file [kind]
@@ -1171,3 +1185,73 @@
                 (editor-process-keypress))
               ([err fib]
                (propagate err fib)))))
+
+(comment
+  
+  # Test Find modal
+  (do (reset-editor-state)
+      (load-file "project.janet")
+
+      (move-cursor :down)
+      (move-cursor :right)
+      (move-cursor :right)
+      (move-cursor :right)
+    
+      # Mimic (find-in-text-modal)
+      (edset :search-active true)
+      (edset :modalinput "declare")
+      (set-temp-pos)
+
+      (do (find-all (editor-state :modalinput))
+          (unless (< 0 (safe-len (editor-state :search-results)))
+                  (return-to-temp-pos)
+                  (clear-temp-pos)
+                  (set modal-rethome false)
+                  (edset :search-active nil)
+                  (send-status-msg "No matches found.")
+                  (break))
+
+          # Mimic (find-next true) -> (move-to-match)
+          (do (let [all-results (editor-state :search-results)
+                    filter-fn (fn [[y x]] (or (> y (abs-y)) (and (= y (abs-y)) (> x (abs-x)))))
+                    next-results (sort (filter filter-fn all-results))
+                    [y x] (or (first next-results) (first all-results))]
+                (jump-to y x))))
+
+        # Mimic local (exit-search) binding
+        # (do (clear-temp-pos)
+        #     (edset :search-active nil))))
+          
+        # Mimic local (cancel-search) binding
+        (return-to-temp-pos)
+        (clear-temp-pos)
+        (edset :search-active nil)
+
+        (edset :search-active true)
+        (edset :modalinput "declare")
+        (set-temp-pos)
+
+        (do (find-all (editor-state :modalinput))
+          (unless (< 0 (safe-len (editor-state :search-results)))
+                  (return-to-temp-pos)
+                  (clear-temp-pos)
+                  (set modal-rethome false)
+                  (edset :search-active nil)
+                  (send-status-msg "No matches found.")
+                  (break))
+
+          # Mimic (find-next true) -> (move-to-match)
+          (do (let [all-results (editor-state :search-results)
+                    filter-fn (fn [[y x]] (or (> y (abs-y)) (and (= y (abs-y)) (> x (abs-x)))))
+                    next-results (sort (filter filter-fn all-results))
+                    [y x] (or (first next-results) (first all-results))]
+                (jump-to y x))))
+        
+        # Mimic local (cancel-search) binding
+        (return-to-temp-pos)
+        (clear-temp-pos)
+        (edset :search-active nil)  
+        
+        editor-state) 
+
+  )
