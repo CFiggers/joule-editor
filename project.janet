@@ -4,7 +4,7 @@
   :dependencies ["https://www.github.com/andrewchambers/janet-jdn"
                  "https://www.github.com/CFiggers/janet-termios"
                  "https://www.github.com/janet-lang/spork"
-                 "https://www.github.com/MorganPeterson/jermbox"
+                 "https://www.github.com/CFiggers/jermbox"
                  "https://github.com/ianthehenry/judge.git"])
 
 (declare-executable 
