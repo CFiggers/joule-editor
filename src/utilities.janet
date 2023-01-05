@@ -42,5 +42,11 @@
 (defn load-jdn [where]
   (jdn/decode (slurp where)))
 
-(defn log [content]
-  (spit "log.txt" (string (string/format "%q" content) "\n") :a))
+(defn log [content &named dump]
+  (let [output (string (if (string? content) content
+                           (string/format "%q" content)) 
+                       (if dump
+                         (string/format " %q" dump)
+                         "")
+                       "\n")]
+    (spit "log.txt" output :a)))
