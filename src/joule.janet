@@ -29,7 +29,7 @@
       default-config)
     (load-jdn joulerc-path)))
 
-(defn reset-editor-state []
+(defn reset-editor-state :tested []
   (set editor-state
        @{:cx 0
          :cy 0
@@ -106,8 +106,8 @@
 
 ### Terminal ###
 
-(defn update-screen-sizes []
-  (let [sizes (get-window-size)]
+(defn update-screen-sizes [&opt default-sizes]
+  (let [sizes (or default-sizes (get-window-size))]
     (edset :screencols (sizes :cols)
            :screenrows (- (sizes :rows) 2))))
 
@@ -130,7 +130,6 @@
       (clamp-row))))
 
 (defn jump-to [y x]
-  (log "Ping! jump-to")
   (edset :rowoffset (max 0 (- y (math/trunc (/ (editor-state :screenrows) 2))))
          :coloffset (max 0 (+ 10 (- x (editor-state :screencols)))))
   (edset :cy (- y (editor-state :rowoffset))
@@ -460,9 +459,10 @@
        (add-status-bar)
        (join-rows)))
 
-(defn editor-refresh-screen [& opts]
-  (update-screen-sizes)
-  (unless (index-of :modal opts) (editor-scroll))
+(defn editor-refresh-screen [&opt opts]
+  (default opts {})
+  (update-screen-sizes (opts :default-sizes))
+  (unless (opts :modal) (editor-scroll))
   (var abuf @"")
 
   (buffer/push-string abuf (esc "?25l"))
@@ -477,8 +477,8 @@
 
   (buffer/push-string abuf (esc "?25h")) 
 
-  (file/write stdout abuf)
-  (file/flush stdout))
+  (file/write (dyn :out stdout) abuf)
+  (file/flush (dyn :out stdout)))
 
 ### Clipboard ###
 
@@ -664,16 +664,13 @@
   
   (when (= (os/which) :linux)
     (prin "\e[?1049h"))
-  (file/write stdout "\e[H")
-  (file/flush stdout)
+  (file/write (dyn :out stdout) "\e[H")
+  (file/flush (dyn :out stdout))
   
-  (file/write stdout "Joule Debugger\n\n")
-  (file/flush stdout)
-  (file/write stdout "Current Editor State:\n\n")
-  (file/flush stdout)
-  (file/write stdout (string/format "%q" editor-state))
-  (file/write stdout "\n\n")
-  (file/flush stdout)
+  (file/write (dyn :out stdout) "Joule Debugger\n\nCurrent Editor State:\n\n")
+  (file/write (dyn :out stdout) (string/format "%q" editor-state))
+  (file/write (dyn :out stdout) "\n\n")
+  (file/flush (dyn :out stdout))
 
   (debugger (fiber/current))
   
@@ -691,7 +688,7 @@
 (varfn find-in-text-modal [])
 (varfn jump-to-modal [])
 
-(defn editor-process-keypress [&opt in-key] 
+(defn editor-process-keypress :tested [&opt in-key] 
   (let [key (or in-key (jermbox/read-key (dyn :ev))) #Blocks here waiting on keystroke
         cx (editor-state :cx)
         cy (editor-state :cy)
@@ -969,7 +966,7 @@
         (break)))))
 
 (defn modal [message kind callback &named keep-input fake-text]
-  (log "Ping! modal" :dump modal-rethome)
+  (log "Ping! modal" :dump fake-text)
   (when modal-rethome
     (log "modal Saved temp pos")
     (set-temp-pos))
@@ -990,7 +987,7 @@
     (do (set modal-active false)
         (edset :modalinput fake-text))
     (while (and modal-active (not modal-cancel))
-      (editor-refresh-screen :modal)
+      (editor-refresh-screen {:modal true})
       (modal-process-keypress kind)))
 
   (log "Mid-modal, before callback: " :dump editor-state)
@@ -1023,14 +1020,14 @@
 
 (varfn confirm-lose-changes [])
 
-(defn load-file [filename]
+(defn load-file :tested [filename &named fake-text]
   (let [erows (string/split "\n" (try (slurp filename)
                                       ([e f] (spit filename "")
                                              (slurp filename))))
         callback | (edset :filename filename
                           :erows erows
                           :filetype (detect-filetype filename))]
-    (confirm-lose-changes callback)))
+    (confirm-lose-changes callback :fake-text fake-text)))
 
 (defn ask-filename-modal [&named fake-text]
   (modal "Filename?" :input |(edset :filename (editor-state :modalinput)) :fake-text fake-text))
@@ -1049,12 +1046,14 @@
            (edset :dirty 0)
            (send-status-msg (string "File saved!"))))
 
-(varfn load-file-modal [& fake-text] 
-  (modal "Load what file?" :input |(do (load-file (editor-state :modalinput))) :fake-text fake-text) 
-  (if modal-cancel
-    (send-status-msg "Cancelled.")
-    (do (edset :cx 0 :cy 0 :rowoffset 0 :coloffset 0)
-        (send-status-msg (string "Loaded file: " (editor-state :filename))))))
+(varfn load-file-modal [&opt fake-text] 
+       (log "Ping! load-file-modal " :dump fake-text)
+       (let [callback | (do (load-file (editor-state :modalinput)))]
+         (modal "Load what file?" :input callback :fake-text fake-text)
+         (if modal-cancel
+           (send-status-msg "Cancelled.")
+           (do (edset :cx 0 :cy 0 :rowoffset 0 :coloffset 0)
+               (send-status-msg (string "Loaded file: " (editor-state :filename)))))))
 
 (defn editor-open [args]
   (when-let [file (first (drop 1 args))]
@@ -1133,7 +1132,7 @@
 
 ### Misc Modals ### 
 
-(varfn jump-to-modal [&named fake-text] 
+(varfn jump-to-modal :tested [&named fake-text] 
   (modal "Go where? (Line #)" :input
          (fn [& args]
            (if-let [n (scan-number (editor-state :modalinput))]
