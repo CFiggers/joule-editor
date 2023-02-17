@@ -6,6 +6,8 @@
 
 ### Testing Utilities ###
 
+(def start (os/clock))
+
 (defn ignore-screen-size []
   (set (joule/editor-state :screenrows) nil)
   (set (joule/editor-state :screencols) nil))
@@ -232,6 +234,9 @@
 
       # Validate results
       (expect result "\e[?25l\e[H 95 \e[K\r\n 96 \e[K\r\n 97 \e[K\r\n 98 \e[K\r\n 99 \e[K\r\n100 \e[K\r\n101 \e[K\r\n102 \e[K\r\n103 \e[K\r\n104 \e[K\r\n105 \e[K\r\n106 \e[K\r\n107 \e[K\r\n108 \e[K\r\n109 \e[K\r\n110 \e[K\r\n111 \e[K\r\n112 \e[K\r\n113 \e[K\r\n114 \e[38;2;156;220;254mfrom\e[0;39m \e[38;2;156;220;254m@\e[0;39m{\e[38;2;79;193;255m:x\e[0;39m (\e[38;2;156;220;254mabs-x\e[0;39m) \e[38;2;79;193;255m:y\e[0;39m (\e[38;2;156;220;254mabs-y\e[0;39m)} \e[38;2;79;193;255m:select-to\e[0;39m \e[38;2;156;220;254m@\e[0;39m{\e[38;2;79;193;255m:x\e[0;39m (\e[38;2;156;220;254mabs-x\e[0;39m) \e[38;2;79;193;255m:y\e[0;39m (\e[38;2;156;220;254mabs-y\e[0;39m)}) (\e[38;2;156;220;254mgrow-selection\e[0;39m \e[38;2;156;220;254mdir\e[0;39m))))\e[K\r\n115 \e[0;34m~\e[0;39m\e[K\r\n116 \e[0;34m~\e[0;39m\e[K\r\n117 \e[0;34m~\e[0;39m\e[K\r\n118 \e[0;34m~\e[0;39m\e[K\r\n119 \e[0;34m~\e[0;39m\e[K\r\n120 \e[0;34m~\e[0;39m\e[K\r\n121 \e[0;34m~\e[0;39m\e[K\r\n122 \e[0;34m~\e[0;39m\e[K\r\n123 \e[0;34m~\e[0;39m\e[K\r\n124 \e[0;34m~\e[0;39m\e[K\r\n125 \e[0;34m~\e[0;39m\e[K\r\n126 \e[0;34m~\e[0;39m\e[K\r\n127 \e[0;34m~\e[0;39m\e[K\r\n128 \e[0;34m~\e[0;39m\e[K\r\n129 \e[0;34m~\e[0;39m\e[K\r\n130 \e[0;34m~\e[0;39m\e[K\r\n131 \e[0;34m~\e[0;39m\e[K\r\n132 \e[0;34m~\e[0;39m\e[K\r\n    \e[1;4mmisc/test-joule.janet\e[m                                                                  114:507\e[K\r\n    \e[K\e[20;95H\e[?25h"))
+
+(test final-time
+      (print "Elapsed time: " (- (os/clock) start) " seconds"))
 
 # (test editor-jump-home-on-empty-line 
 #       # Set up test state
