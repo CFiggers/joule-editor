@@ -105,6 +105,13 @@
   (test (joule/editor-state :cx) 0)
   (test (joule/editor-state :coloffset) 0))
 
+(deftest: with-fresh-editor "toggle-line-numbers" [_]
+  (def edup joule/edup)
+
+  (joule/toggle-line-numbers)
+  (test (joule/editor-state :linenumbers) false)
+  (joule/toggle-line-numbers)
+  (test (joule/editor-state :linenumbers) true))
 
 # # TODO: Test PageUp going off top of document
 

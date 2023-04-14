@@ -58,10 +58,10 @@
 
 ### Editor State Functions ###
 
-(defn abs-x []
+(defn abs-x :tested []
   (+ (editor-state :cx) (editor-state :coloffset)))
 
-(defn abs-y []
+(defn abs-y :tested []
   (+ (editor-state :cy) (editor-state :rowoffset)))
 
 (defn edset [& key-v]
@@ -96,13 +96,13 @@
     (safe-len erow) 
     0))
 
-(defn max-x [row]
+(defn max-x :tested [row]
   (let [h-offset (editor-state :coloffset)]
     (min (- (rowlen row) h-offset)
          (editor-state :screencols))))
 
-(defn toggle-line-numbers []
-  (edup :linenumbers not))
+(defmacro toggle-line-numbers :tested []
+  '(edup :linenumbers not))
 
 ### Terminal ###
 
@@ -156,11 +156,11 @@
                             (dec (editor-state :screenrows))))
                   (clamp-viewport))))
 
-(defn move-cursor-home []
+(defn move-cursor-home :tested []
   (move-viewport :home)
   (edset :cx 0))
 
-(defn move-cursor-end []
+(defn move-cursor-end :tested []
   (let [row-len (rowlen (abs-y))
         screen-h (- (editor-state :screencols) (get-margin))]
     (if (> row-len screen-h)
