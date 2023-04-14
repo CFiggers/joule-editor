@@ -7,6 +7,8 @@
 (def start (os/clock))
 
 (deftest: with-fresh-editor test-abs-x [_]
+  (def editor-state joule/editor-state)
+  
   (joule/load-file "misc/test-joule.janet.test")
   (test (joule/abs-x) 0) 
 
@@ -20,6 +22,8 @@
   (test (joule/abs-x) 507))
 
 (deftest: with-fresh-editor test-abs-y [_]
+  (def editor-state joule/editor-state)
+
   (joule/load-file "misc/test-joule.janet.test")
   (test (joule/abs-y) 0) 
 

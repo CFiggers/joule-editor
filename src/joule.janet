@@ -58,11 +58,11 @@
 
 ### Editor State Functions ###
 
-(defn abs-x :tested []
-  (+ (editor-state :cx) (editor-state :coloffset)))
+(defmacro abs-x :tested []
+  '(+ (editor-state :cx) (editor-state :coloffset)))
 
-(defn abs-y :tested []
-  (+ (editor-state :cy) (editor-state :rowoffset)))
+(defmacro abs-y :tested []
+  '(+ (editor-state :cy) (editor-state :rowoffset)))
 
 (defn edset [& key-v]
   (assert (= 0 (% (safe-len key-v) 2)))
